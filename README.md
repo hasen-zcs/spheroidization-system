@@ -14,6 +14,28 @@
 * 检测标准管理
 
 上游检测模块负责实际检测和结果产生，本系统负责检测结果进入业务系统后的管理。
+### 启动服务
+启动后端：
+
+```bash
+uvicorn app.main:app --reload
+```
+
+启动前端：
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+然后访问：
+
+```text
+http://localhost:5173
+```
+
+即可进行完整业务流程测试。
 
 系统整体架构：
 
