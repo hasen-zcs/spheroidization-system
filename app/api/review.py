@@ -13,6 +13,9 @@ router = APIRouter(
 
 @router.post("")
 def create_review(data: dict):
+    """
+    接收数据，创建出新的数据项，先判断添加的数据项存不存在，然后再添加
+    """
     # 测试代码
     record_exists = any(
         record["id"] == data["spheroidization_record_id"]
@@ -47,6 +50,9 @@ def create_review(data: dict):
 
 @router.get("/{record_id}")
 def query_reviews(record_id: int):
+    """
+    通过接收record_id然后查询
+    """
     # 测试代码
     data = [
         review
