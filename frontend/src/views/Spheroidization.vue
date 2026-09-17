@@ -1,30 +1,49 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue"
-import { createSpheroidization, querySpheroidization } from "../api"
+import { computed, onMounted, ref, watch } from "vue"
+import { useRoute } from "vue-router"
 
-const records = ref<any[]>([])
+import {
+  createSpheroidization,
+  queryAbnormalSpheroidization,
+  querySpheroidization,
+} from "../api"
+import type { SpheroidizationRecord } from "../api"
+
+const props = withDefaults(
+  defineProps<{
+    abnormalOnly?: boolean
+  }>(),
+  {
+    abnormalOnly: false,
+  }
+)
+
+const route = useRoute()
+
+const records = ref<SpheroidizationRecord[]>([])
 const loading = ref(true)
-
 const showCreateForm = ref(false)
 
 const resultFilter = ref("all")
 const processFilter = ref("all")
 
 const detectionTime = ref("2026-09-06 18:00:00")
-const ironWaterWeight = ref(1500)
-const spheroidizationStartTime = ref("2026-09-06 18:00:10")
-const spheroidizationEndTime = ref("2026-09-06 18:01:15")
+const spheroidizationStartTime = ref(
+  "2026-09-06 18:00:10"
+)
+const spheroidizationEndTime = ref(
+  "2026-09-06 18:01:15"
+)
 const actualSpheroidizationTime = ref(65)
-const actualEntryLength = ref(125)
-const machineResult = ref("正常")
 const spheroidizationAbnormal = ref(false)
-const entryAbnormal = ref(false)
 
 async function loadRecords() {
   loading.value = true
 
   try {
-    const result = await querySpheroidization()
+    const result = props.abnormalOnly
+      ? await queryAbnormalSpheroidization()
+      : await querySpheroidization()
 
     if (result.code === 200) {
       records.value = result.data
@@ -37,20 +56,14 @@ async function loadRecords() {
 async function submitCreate() {
   const result = await createSpheroidization({
     detection_time: detectionTime.value,
-    iron_water_weight: ironWaterWeight.value,
     spheroidization_start_time:
       spheroidizationStartTime.value,
     spheroidization_end_time:
       spheroidizationEndTime.value,
     actual_spheroidization_time:
       actualSpheroidizationTime.value,
-    actual_entry_length:
-      actualEntryLength.value,
-    machine_result: machineResult.value,
     spheroidization_abnormal:
       spheroidizationAbnormal.value,
-    entry_abnormal:
-      entryAbnormal.value,
   })
 
   if (result.code === 200) {
@@ -61,9 +74,7 @@ async function submitCreate() {
 
 const filteredRecords = computed(() => {
   return records.value.filter((record) => {
-    const abnormal =
-      record.spheroidization_abnormal ||
-      record.entry_abnormal
+    const abnormal = record.spheroidization_abnormal
 
     if (
       resultFilter.value === "abnormal" &&
@@ -97,432 +108,479 @@ const filteredRecords = computed(() => {
   })
 })
 
+function openCreateFormIfRequested() {
+  if (route.query.create === "1") {
+    showCreateForm.value = true
+  }
+}
+
+watch(
+  () => props.abnormalOnly,
+  (abnormalOnly) => {
+    resultFilter.value = abnormalOnly
+      ? "abnormal"
+      : "all"
+    processFilter.value = "all"
+    loadRecords()
+  }
+)
+
+watch(
+  () => route.query.create,
+  openCreateFormIfRequested
+)
+
 onMounted(() => {
+  resultFilter.value = props.abnormalOnly
+    ? "abnormal"
+    : "all"
+
+  openCreateFormIfRequested()
   loadRecords()
 })
 </script>
 
 <template>
-  <div class="page">
-
-    <!-- 页面标题 -->
-    <div class="page-header">
-
+  <div class="records-page">
+    <div class="page-heading">
       <div>
-        <h1>球化记录</h1>
-        <p>查看和管理球化检测记录</p>
+        <h1>
+          {{ abnormalOnly ? "异常记录" : "球化记录" }}
+        </h1>
+        <p>
+          {{
+            abnormalOnly
+              ? "查看机器检测产生的异常记录"
+              : "查询和管理球化检测记录"
+          }}
+        </p>
       </div>
 
-      <div class="header-buttons">
-
-        <button @click="showCreateForm = !showCreateForm">
-          {{ showCreateForm ? "关闭新增" : "新增记录" }}
+      <div class="header-actions">
+        <button
+          class="primary-button"
+          type="button"
+          @click="showCreateForm = !showCreateForm"
+        >
+          {{
+            showCreateForm
+              ? "关闭新增"
+              : "新增记录"
+          }}
         </button>
 
-        <button @click="loadRecords">
+        <button
+          class="secondary-button"
+          type="button"
+          @click="loadRecords"
+        >
           刷新
         </button>
-
       </div>
-
     </div>
 
-
-    <!-- 新增记录 -->
-    <div
+    <section
       v-if="showCreateForm"
-      class="card create-form"
+      class="panel create-form"
     >
-
-      <h2>新增球化记录</h2>
-
-      <div class="form-grid">
-
-        <label>
-          检测时间
-          <input v-model="detectionTime" />
-        </label>
-
-        <label>
-          铁水重量
-          <input
-            v-model.number="ironWaterWeight"
-            type="number"
-          />
-        </label>
-
-        <label>
-          球化开始时间
-          <input
-            v-model="spheroidizationStartTime"
-          />
-        </label>
-
-        <label>
-          球化结束时间
-          <input
-            v-model="spheroidizationEndTime"
-          />
-        </label>
-
-        <label>
-          实际球化时间
-          <input
-            v-model.number="actualSpheroidizationTime"
-            type="number"
-          />
-        </label>
-
-        <label>
-          实际入料长度
-          <input
-            v-model.number="actualEntryLength"
-            type="number"
-          />
-        </label>
-
-        <label>
-          机器检测结果
-          <select v-model="machineResult">
-            <option value="正常">正常</option>
-            <option value="异常">异常</option>
-          </select>
-        </label>
-
-        <label>
-          球化异常
-          <input
-            v-model="spheroidizationAbnormal"
-            type="checkbox"
-          />
-        </label>
-
-        <label>
-          入料异常
-          <input
-            v-model="entryAbnormal"
-            type="checkbox"
-          />
-        </label>
-
+      <div class="section-title">
+        <h2>新增球化记录</h2>
+        <span>新记录会保存当前生效的检测标准快照</span>
       </div>
 
-      <button @click="submitCreate">
-        提交记录
-      </button>
+      <form @submit.prevent="submitCreate">
+        <div class="form-grid">
+          <label>
+            <span>检测时间</span>
+            <input v-model="detectionTime" />
+          </label>
 
-    </div>
+          <label>
+            <span>球化开始时间</span>
+            <input
+              v-model="spheroidizationStartTime"
+            />
+          </label>
 
+          <label>
+            <span>球化结束时间</span>
+            <input
+              v-model="spheroidizationEndTime"
+            />
+          </label>
 
-    <!-- 筛选 -->
-    <div class="card filter-bar">
+          <label>
+            <span>实际球化时间</span>
+            <input
+              v-model.number="actualSpheroidizationTime"
+              min="0"
+              step="0.1"
+              type="number"
+            />
+          </label>
 
-      <div class="filter-item">
-        <span>检测结果：</span>
+          <label class="checkbox-field">
+            <span>机器判定异常</span>
+            <input
+              v-model="spheroidizationAbnormal"
+              type="checkbox"
+            />
+          </label>
+        </div>
 
-        <select v-model="resultFilter">
-          <option value="all">
-            全部
-          </option>
+        <button
+          class="primary-button"
+          type="submit"
+        >
+          提交记录
+        </button>
+      </form>
+    </section>
 
-          <option value="normal">
-            正常
-          </option>
+    <section class="panel search-panel">
+      <div class="form-group">
+        <label>检测结果</label>
 
-          <option value="abnormal">
-            异常
-          </option>
+        <select
+          v-model="resultFilter"
+          :disabled="abnormalOnly"
+        >
+          <option value="all">全部</option>
+          <option value="normal">正常</option>
+          <option value="abnormal">异常</option>
         </select>
       </div>
 
-
-      <div class="filter-item">
-        <span>处理状态：</span>
+      <div class="form-group">
+        <label>处理状态</label>
 
         <select v-model="processFilter">
-          <option value="all">
-            全部
-          </option>
-
-          <option value="processed">
-            已处理
-          </option>
-
-          <option value="unprocessed">
-            未处理
-          </option>
+          <option value="all">全部</option>
+          <option value="processed">已处理</option>
+          <option value="unprocessed">未处理</option>
         </select>
       </div>
 
-    </div>
+      <button
+        class="primary-button search-button"
+        type="button"
+        @click="loadRecords"
+      >
+        查询
+      </button>
+    </section>
 
-
-    <!-- 数据表格 -->
-    <div class="card">
-
-      <div v-if="loading">
+    <section class="panel table-panel">
+      <div
+        v-if="loading"
+        class="empty-state"
+      >
         正在加载数据...
       </div>
 
       <div
         v-else-if="filteredRecords.length === 0"
-        class="empty"
+        class="empty-state"
       >
         暂无符合条件的记录
       </div>
 
-      <table v-else>
+      <div
+        v-else
+        class="table-scroll"
+      >
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>检测时间</th>
+              <th>球化开始时间</th>
+              <th>球化结束时间</th>
+              <th>标准/实际球化时长</th>
+              <th>检测结果</th>
+              <th>处理状态</th>
+              <th>操作</th>
+            </tr>
+          </thead>
 
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>检测时间</th>
-            <th>铁水重量</th>
-            <th>球化时间</th>
-            <th>入料长度</th>
-            <th>检测结果</th>
-            <th>处理状态</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-
-        <tbody>
-
-          <tr
-            v-for="record in filteredRecords"
-            :key="record.id"
-          >
-
-            <td>
-              {{ record.id }}
-            </td>
-
-            <td>
-              {{ record.detection_time }}
-            </td>
-
-            <td>
-              {{ record.iron_water_weight }}
-            </td>
-
-            <td>
-              {{ record.actual_spheroidization_time }}
-            </td>
-
-            <td>
-              {{ record.actual_entry_length }}
-            </td>
-
-            <td>
-
-              <span
-                :class="
-                  record.spheroidization_abnormal ||
-                  record.entry_abnormal
-                    ? 'status-abnormal'
-                    : 'status-normal'
-                "
-              >
+          <tbody>
+            <tr
+              v-for="record in filteredRecords"
+              :key="record.id"
+            >
+              <td>{{ record.id }}</td>
+              <td>{{ record.detection_time }}</td>
+              <td>
+                {{ record.spheroidization_start_time }}
+              </td>
+              <td>
+                {{ record.spheroidization_end_time }}
+              </td>
+              <td>
                 {{
-                  record.spheroidization_abnormal ||
-                  record.entry_abnormal
-                    ? "异常"
-                    : "正常"
+                  record.standard_spheroidization_time
                 }}
-              </span>
-
-            </td>
-
-            <td>
-
-              <span
-                :class="
-                  record.processed
-                    ? 'status-normal'
-                    : 'status-unprocessed'
-                "
-              >
+                /
                 {{
-                  record.processed
-                    ? "已处理"
-                    : "未处理"
+                  record.actual_spheroidization_time ??
+                  "--"
                 }}
-              </span>
-
-            </td>
-
-            <td>
-
-              <router-link
-                :to="`/spheroidization/${record.id}`"
-              >
-                查看详情
-              </router-link>
-
-            </td>
-
-          </tr>
-
-        </tbody>
-
-      </table>
-
-    </div>
-
+              </td>
+              <td>
+                <span
+                  :class="
+                    record.spheroidization_abnormal
+                      ? 'status-abnormal'
+                      : 'status-normal'
+                  "
+                >
+                  {{
+                    record.spheroidization_abnormal
+                      ? "异常"
+                      : "正常"
+                  }}
+                </span>
+              </td>
+              <td>
+                <span
+                  :class="
+                    record.processed
+                      ? 'status-normal'
+                      : 'status-unprocessed'
+                  "
+                >
+                  {{
+                    record.processed
+                      ? "已处理"
+                      : "未处理"
+                  }}
+                </span>
+              </td>
+              <td>
+                <router-link
+                  class="table-link"
+                  :to="`/spheroidization/${record.id}`"
+                >
+                  查看详情
+                </router-link>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
   </div>
 </template>
 
-
 <style scoped>
-
-.page {
-  max-width: 1400px;
-  margin: 0 auto;
+.records-page {
+  min-height: 100%;
+  padding: 12px;
+  background: #f5f7fa;
 }
 
-
-/* 页面头部 */
-
-.page-header {
+.page-heading {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 10px;
+  padding: 14px 16px;
+  background: #fff;
+  border: 1px solid #d9d9d9;
 }
 
-.page-header h1 {
-  margin-bottom: 8px;
+.page-heading h1 {
+  margin-bottom: 4px;
+  color: #003399;
+  font-size: 18px;
 }
 
-.page-header p {
-  color: #666;
+.page-heading p {
+  color: #777;
+  font-size: 12px;
 }
 
-.header-buttons {
+.header-actions {
   display: flex;
-  gap: 12px;
+  gap: 8px;
 }
 
-
-/* 卡片 */
-
-.card {
-  background: white;
-  border: 1px solid #ddd;
-  padding: 24px;
-  margin-bottom: 20px;
+.create-form {
+  margin-bottom: 10px;
+  padding: 14px 16px;
 }
 
-
-/* 按钮 */
-
-button {
-  padding: 9px 16px;
-  border: 1px solid #ccc;
-  background: white;
-  border-radius: 4px;
-  cursor: pointer;
+.section-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
 }
 
-button:hover {
-  background: #f5f5f5;
+.section-title h2 {
+  color: #1a2a3a;
+  font-size: 15px;
 }
 
-
-/* 新增表单 */
-
-.create-form h2 {
-  margin-bottom: 20px;
+.section-title span {
+  color: #888;
+  font-size: 12px;
 }
 
 .form-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 16px;
-  margin-bottom: 20px;
+  grid-template-columns: repeat(2, minmax(260px, 1fr));
+  gap: 12px 24px;
+  margin-bottom: 14px;
 }
 
 .form-grid label {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
   align-items: center;
+  gap: 10px;
+  color: #555;
+  font-size: 12px;
 }
 
 .form-grid input,
 .form-grid select {
-  width: 220px;
-  padding: 8px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
+  width: 100%;
+  min-height: 32px;
+  padding: 5px 9px;
+  color: #1a2a3a;
+  background: #fff;
+  border: 1px solid #d9d9d9;
+  border-radius: 2px;
+  outline: none;
 }
 
+.form-grid input:focus,
+.form-grid select:focus {
+  border-color: #1890ff;
+  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.12);
+}
 
-/* 筛选 */
+.checkbox-field {
+  grid-template-columns: 120px 20px !important;
+}
 
-.filter-bar {
+.checkbox-field input {
+  width: 16px;
+  min-height: 16px;
+}
+
+.search-panel {
   display: flex;
-  gap: 32px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 10px;
+  padding: 10px 14px;
 }
 
-.filter-item {
+.form-group {
   display: flex;
   align-items: center;
   gap: 8px;
+  color: #666;
+  font-size: 12px;
 }
 
-.filter-item select {
-  padding: 8px 12px;
+.form-group select {
+  min-width: 120px;
+  min-height: 30px;
+  padding: 4px 8px;
+  color: #1a2a3a;
+  background: #fff;
+  border: 1px solid #d9d9d9;
+  border-radius: 2px;
 }
 
+.form-group select:disabled {
+  color: #888;
+  background: #f5f5f5;
+}
 
-/* 表格 */
+.search-button {
+  margin-left: auto;
+}
+
+.table-panel {
+  min-height: 220px;
+}
+
+.table-scroll {
+  overflow: auto;
+}
 
 table {
   width: 100%;
+  min-width: 1050px;
+  font-size: 12px;
   border-collapse: collapse;
 }
 
 th,
 td {
-  padding: 14px 12px;
-  border-bottom: 1px solid #eee;
+  padding: 9px 10px;
   text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid #e8e8e8;
 }
 
 th {
-  background: #f7f7f7;
-  font-weight: 600;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  color: #333;
+  font-weight: 700;
+  background: #fafafa;
+  border-bottom-color: #d9d9d9;
 }
 
-tbody tr:hover {
+tbody tr:nth-child(even) {
   background: #fafafa;
 }
 
-
-/* 状态 */
-
-.status-normal {
-  color: #16803c;
-  font-weight: 600;
+tbody tr:hover {
+  background: #e6f7ff;
 }
 
-.status-abnormal {
-  color: #c62828;
-  font-weight: 600;
+.table-link {
+  color: #1890ff;
+  text-decoration: none;
 }
 
-.status-unprocessed {
-  color: #d97706;
-  font-weight: 600;
+.table-link:hover {
+  text-decoration: underline;
 }
 
-
-/* 空数据 */
-
-.empty {
-  padding: 40px;
-  text-align: center;
-  color: #888;
+@media (max-width: 900px) {
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
+@media (max-width: 600px) {
+  .page-heading,
+  .section-title {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .form-grid label {
+    grid-template-columns: 1fr;
+  }
+
+  .checkbox-field {
+    grid-template-columns: 1fr 20px !important;
+  }
+
+  .search-button {
+    margin-left: 0;
+  }
+}
 </style>

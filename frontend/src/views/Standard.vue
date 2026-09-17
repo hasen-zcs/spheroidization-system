@@ -2,13 +2,14 @@
 import { onMounted, ref } from "vue"
 
 import {
+  createStandard,
   getCurrentStandard,
   getStandardHistory,
-  createStandard,
 } from "../api"
+import type { StandardRecord } from "../api"
 
-const currentStandard = ref<any>(null)
-const standards = ref<any[]>([])
+const currentStandard = ref<StandardRecord | null>(null)
+const standards = ref<StandardRecord[]>([])
 const loading = ref(true)
 
 const standardSpheroidizationTime = ref(70)
@@ -41,23 +42,18 @@ async function submitCreate() {
   const result = await createStandard({
     standard_spheroidization_time:
       standardSpheroidizationTime.value,
-
     standard_entry_length:
       standardEntryLength.value,
-
     weighing_standard:
       weighingStandard.value,
-
     created_by:
       createdBy.value,
-
     remark:
       remark.value,
   })
 
   if (result.code === 200) {
     remark.value = ""
-
     await loadData()
   }
 }
@@ -67,465 +63,389 @@ onMounted(() => {
 })
 </script>
 
-
 <template>
-
-  <div class="page">
-
-    <!-- 页面标题 -->
-
-    <div class="page-header">
-
+  <div class="standard-page">
+    <div class="page-heading">
       <div>
         <h1>检测标准</h1>
-
-        <p>
-          管理当前检测标准和历史标准
-        </p>
+        <p>管理当前检测标准和历史版本</p>
       </div>
 
-      <button @click="loadData">
+      <button
+        class="secondary-button"
+        type="button"
+        @click="loadData"
+      >
         刷新
       </button>
-
     </div>
 
+    <section class="panel current-panel">
+      <div class="section-header">
+        <h2>当前生效标准</h2>
+        <span>最新创建的标准立即生效</span>
+      </div>
 
-    <!-- 当前标准 -->
-
-    <section class="card">
-
-      <h2>当前生效标准</h2>
-
-      <div v-if="loading">
+      <div
+        v-if="loading"
+        class="empty-state"
+      >
         正在加载...
       </div>
 
       <div
         v-else-if="!currentStandard"
-        class="empty"
+        class="empty-state"
       >
         暂无检测标准
       </div>
 
       <div
         v-else
-        class="current-standard"
+        class="standard-grid"
       >
-
         <div class="standard-item">
-
-          <span>
-            球化时间标准
-          </span>
-
+          <span>球化时间标准</span>
           <strong>
             {{ currentStandard.standard_spheroidization_time }}
           </strong>
-
         </div>
 
-
         <div class="standard-item">
-
-          <span>
-            入料长度标准
-          </span>
-
+          <span>入料长度标准</span>
           <strong>
             {{ currentStandard.standard_entry_length }}
           </strong>
-
         </div>
 
-
         <div class="standard-item">
-
-          <span>
-            称重标准
-          </span>
-
+          <span>称重标准</span>
           <strong>
             {{ currentStandard.weighing_standard }}
           </strong>
-
         </div>
-
 
         <div class="standard-item">
-
-          <span>
-            创建时间
-          </span>
-
-          <strong>
-            {{ currentStandard.created_at }}
-          </strong>
-
+          <span>创建时间</span>
+          <strong>{{ currentStandard.created_at }}</strong>
         </div>
-
 
         <div class="standard-item">
-
-          <span>
-            创建人
-          </span>
-
-          <strong>
-            {{ currentStandard.created_by }}
-          </strong>
-
+          <span>创建人</span>
+          <strong>{{ currentStandard.created_by }}</strong>
         </div>
-
 
         <div class="standard-item">
-
-          <span>
-            备注
-          </span>
-
-          <strong>
-            {{ currentStandard.remark || "无" }}
-          </strong>
-
+          <span>备注</span>
+          <strong>{{ currentStandard.remark || "无" }}</strong>
         </div>
+      </div>
+    </section>
 
+    <section class="panel history-panel">
+      <div class="section-header">
+        <h2>标准记录</h2>
+        <span>共 {{ standards.length }} 条</span>
       </div>
 
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>球化时间</th>
+              <th>入料长度</th>
+              <th>称重标准</th>
+              <th>创建时间</th>
+              <th>创建人</th>
+              <th>备注</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            <tr
+              v-for="standard in standards"
+              :key="standard.id"
+            >
+              <td>{{ standard.id }}</td>
+              <td>
+                {{
+                  standard.standard_spheroidization_time
+                }}
+              </td>
+              <td>
+                {{ standard.standard_entry_length }}
+              </td>
+              <td>{{ standard.weighing_standard }}</td>
+              <td>{{ standard.created_at }}</td>
+              <td>{{ standard.created_by }}</td>
+              <td>{{ standard.remark || "无" }}</td>
+            </tr>
+
+            <tr v-if="standards.length === 0">
+              <td
+                class="empty-cell"
+                colspan="7"
+              >
+                暂无标准记录
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </section>
 
-
-    <!-- 标准历史 -->
-
-    <section class="card">
-
-      <h2>标准记录</h2>
-
-      <table>
-
-        <thead>
-
-          <tr>
-
-            <th>ID</th>
-
-            <th>
-              球化时间
-            </th>
-
-            <th>
-              入料长度
-            </th>
-
-            <th>
-              称重标准
-            </th>
-
-            <th>
-              创建时间
-            </th>
-
-            <th>
-              创建人
-            </th>
-
-            <th>
-              备注
-            </th>
-
-          </tr>
-
-        </thead>
-
-
-        <tbody>
-
-          <tr
-            v-for="standard in standards"
-            :key="standard.id"
-          >
-
-            <td>
-              {{ standard.id }}
-            </td>
-
-            <td>
-              {{ standard.standard_spheroidization_time }}
-            </td>
-
-            <td>
-              {{ standard.standard_entry_length }}
-            </td>
-
-            <td>
-              {{ standard.weighing_standard }}
-            </td>
-
-            <td>
-              {{ standard.created_at }}
-            </td>
-
-            <td>
-              {{ standard.created_by }}
-            </td>
-
-            <td>
-              {{ standard.remark || "无" }}
-            </td>
-
-          </tr>
-
-        </tbody>
-
-      </table>
-
-    </section>
-
-
-    <!-- 新增标准 -->
-
-    <section class="card">
-
-      <h2>新增检测标准</h2>
-
-      <p class="description">
-        新增标准后立即成为当前生效标准。
-      </p>
-
-
-      <div class="form-grid">
-
-        <label>
-
-          <span>
-            球化时间标准
-          </span>
-
-          <input
-            v-model.number="
-              standardSpheroidizationTime
-            "
-            type="number"
-          />
-
-        </label>
-
-
-        <label>
-
-          <span>
-            入料长度标准
-          </span>
-
-          <input
-            v-model.number="
-              standardEntryLength
-            "
-            type="number"
-          />
-
-        </label>
-
-
-        <label>
-
-          <span>
-            称重标准
-          </span>
-
-          <input
-            v-model.number="
-              weighingStandard
-            "
-            type="number"
-          />
-
-        </label>
-
-
-        <label>
-
-          <span>
-            创建人
-          </span>
-
-          <input
-            v-model="createdBy"
-            placeholder="请输入创建人"
-          />
-
-        </label>
-
-
-        <label class="remark">
-
-          <span>
-            备注
-          </span>
-
-          <textarea
-            v-model="remark"
-            placeholder="请输入标准调整原因或说明"
-          ></textarea>
-
-        </label>
-
+    <section class="panel create-panel">
+      <div class="section-header">
+        <h2>新增检测标准</h2>
+        <span>新增后立即成为当前生效标准</span>
       </div>
 
+      <form @submit.prevent="submitCreate">
+        <div class="form-grid">
+          <label>
+            <span>球化时间标准</span>
+            <input
+              v-model.number="standardSpheroidizationTime"
+              min="0"
+              step="0.1"
+              type="number"
+            />
+          </label>
 
-      <button @click="submitCreate">
-        创建标准
-      </button>
+          <label>
+            <span>入料长度标准</span>
+            <input
+              v-model.number="standardEntryLength"
+              min="0"
+              step="0.1"
+              type="number"
+            />
+          </label>
 
+          <label>
+            <span>称重标准</span>
+            <input
+              v-model.number="weighingStandard"
+              min="0"
+              step="0.1"
+              type="number"
+            />
+          </label>
+
+          <label>
+            <span>创建人</span>
+            <input
+              v-model="createdBy"
+              placeholder="请输入创建人"
+            />
+          </label>
+
+          <label class="remark-field">
+            <span>备注</span>
+            <textarea
+              v-model="remark"
+              placeholder="请输入标准调整原因或说明"
+            ></textarea>
+          </label>
+        </div>
+
+        <button
+          class="primary-button"
+          type="submit"
+        >
+          创建标准
+        </button>
+      </form>
     </section>
-
   </div>
-
 </template>
 
-
 <style scoped>
-
-.page {
-  max-width: 1200px;
-  margin: 0 auto;
+.standard-page {
+  min-height: 100%;
+  padding: 12px;
+  background: #f5f7fa;
 }
 
-
-/* 页面标题 */
-
-.page-header {
+.page-heading {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 10px;
+  padding: 14px 16px;
+  background: #fff;
+  border: 1px solid #d9d9d9;
 }
 
-.page-header h1 {
-  margin-bottom: 8px;
+.page-heading h1 {
+  margin-bottom: 4px;
+  color: #003399;
+  font-size: 18px;
 }
 
-.page-header p {
-  color: #666;
+.page-heading p {
+  color: #777;
+  font-size: 12px;
 }
 
-
-/* 卡片 */
-
-.card {
-  background: white;
-  border: 1px solid #ddd;
-  padding: 24px;
-  margin-bottom: 20px;
+.current-panel,
+.history-panel,
+.create-panel {
+  margin-bottom: 10px;
+  padding: 14px 16px;
 }
 
-.card h2 {
-  margin-bottom: 20px;
-}
-
-
-/* 当前标准 */
-
-.current-standard {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
+.section-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
   gap: 16px;
+  margin-bottom: 12px;
+}
+
+.section-header h2 {
+  color: #1a2a3a;
+  font-size: 15px;
+}
+
+.section-header span {
+  color: #888;
+  font-size: 12px;
+}
+
+.standard-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .standard-item {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  padding: 16px;
-  background: #f7f7f7;
+  gap: 12px;
+  padding: 12px;
+  background: #f7fbff;
+  border: 1px solid #e6f2ff;
 }
 
 .standard-item span {
-  color: #666;
+  color: #777;
+  font-size: 12px;
 }
 
+.standard-item strong {
+  color: #1a2a3a;
+  font-size: 12px;
+  text-align: right;
+}
 
-/* 表格 */
+.table-scroll {
+  overflow-x: auto;
+}
 
 table {
   width: 100%;
+  min-width: 900px;
   border-collapse: collapse;
+  font-size: 12px;
 }
 
 th,
 td {
-  padding: 14px 12px;
-  border-bottom: 1px solid #eee;
+  padding: 9px 10px;
   text-align: left;
+  border-bottom: 1px solid #e8e8e8;
 }
 
 th {
-  background: #f7f7f7;
+  color: #333;
+  font-weight: 700;
+  background: #fafafa;
 }
 
+tbody tr:nth-child(even) {
+  background: #fafafa;
+}
 
-/* 表单 */
+tbody tr:hover {
+  background: #e6f7ff;
+}
 
-.description {
-  margin-bottom: 20px;
-  color: #666;
+.empty-cell {
+  color: #888;
+  text-align: center;
 }
 
 .form-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 18px;
-  margin-bottom: 20px;
+  grid-template-columns: repeat(2, minmax(280px, 1fr));
+  gap: 12px 24px;
+  margin-bottom: 14px;
 }
 
 .form-grid label {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
   align-items: center;
+  gap: 10px;
+  color: #555;
+  font-size: 12px;
+}
+
+.form-grid input,
+.form-grid textarea {
+  width: 100%;
+  padding: 6px 9px;
+  color: #1a2a3a;
+  background: #fff;
+  border: 1px solid #d9d9d9;
+  border-radius: 2px;
+  outline: none;
 }
 
 .form-grid input {
-  width: 220px;
-  padding: 9px 12px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
+  min-height: 32px;
 }
 
-.remark {
+.form-grid textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.form-grid input:focus,
+.form-grid textarea:focus {
+  border-color: #1890ff;
+  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.12);
+}
+
+.remark-field {
   grid-column: span 2;
   align-items: flex-start !important;
 }
 
-textarea {
-  width: 220px;
-  height: 90px;
-  padding: 9px 12px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  resize: vertical;
+@media (max-width: 900px) {
+  .standard-grid,
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .remark-field {
+    grid-column: span 1;
+  }
 }
 
+@media (max-width: 600px) {
+  .page-heading,
+  .section-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 
-/* 按钮 */
-
-button {
-  padding: 9px 16px;
-  border: 1px solid #ccc;
-  background: white;
-  border-radius: 4px;
-  cursor: pointer;
+  .form-grid label {
+    grid-template-columns: 1fr;
+  }
 }
-
-button:hover {
-  background: #f5f5f5;
-}
-
-
-/* 空状态 */
-
-.empty {
-  padding: 30px;
-  text-align: center;
-  color: #888;
-}
-
 </style>

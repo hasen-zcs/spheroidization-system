@@ -1,9 +1,15 @@
-from fastapi import APIRouter
+"""人工复核的路由。
 
-# 以下是导入测试数据
-from app.mock.review import reviews
-from app.mock.spheroidization import spheroidization_records
+只做四件事：收请求 → 转参数 → 调 UseCase → 包响应。
+"""
 
+from fastapi import APIRouter, Depends
+
+from app.application.review.create import CreateReviewUseCase
+from app.application.review.query import QueryReviewUseCase
+from app.dependencies import get_create_review_uc, get_query_review_uc
+from app.schemas.common import ok
+from app.schemas.review import ReviewCreateRequest, to_response, to_result_int
 
 router = APIRouter(
     prefix="/api/reviews",
@@ -12,56 +18,25 @@ router = APIRouter(
 
 
 @router.post("")
-def create_review(data: dict):
-    """
-    接收数据，创建出新的数据项，先判断添加的数据项存不存在，然后再添加
-    """
-    # 测试代码
-    record_exists = any(
-        record["id"] == data["spheroidization_record_id"]
-        for record in spheroidization_records
+def create_review(
+    data: ReviewCreateRequest,
+    uc: CreateReviewUseCase = Depends(get_create_review_uc),
+):
+    # 对应的球化记录不存在时会抛 BusinessException，交给 main.py 的处理器。
+    # 注意 execute 的参数顺序是 (球化记录id, 复核结果, 复核人, 复核说明)，用关键字传，别按位置。
+    review = uc.execute(
+        spheroidization_record_id=data.spheroidization_record_id,
+        review_result=to_result_int(data.review_result),
+        reviewer=data.reviewer,
+        review_remark=data.review_remark,
     )
-
-    if not record_exists:
-        return {
-            "code": 404,
-            "message": "球化记录不存在",
-            "data": None,
-        }
-
-    review = {
-        "id": len(reviews) + 1,
-        "spheroidization_record_id": data["spheroidization_record_id"],
-        "review_result": data["review_result"],
-        "review_remark": data["review_remark"],
-        "reviewer": data["reviewer"],
-        "reviewed_at": "2026-09-06 18:00:00",
-    }
-
-    reviews.append(review)
-
-    return {
-        "code": 200,
-        "message": "复核成功",
-        "data": review,
-    }
-
+    return ok(to_response(review), "复核成功")
 
 
 @router.get("/{record_id}")
-def query_reviews(record_id: int):
-    """
-    通过接收record_id然后查询
-    """
-    # 测试代码
-    data = [
-        review
-        for review in reviews
-        if review["spheroidization_record_id"] == record_id
-    ]
-
-    return {
-        "code": 200,
-        "message": "success",
-        "data": data,
-    }
+def query_reviews(
+    record_id: int,
+    uc: QueryReviewUseCase = Depends(get_query_review_uc),
+):
+    # 一条球化记录可以有多条复核，所以返回列表；没有复核返回空列表
+    return ok([to_response(review) for review in uc.execute(record_id)])

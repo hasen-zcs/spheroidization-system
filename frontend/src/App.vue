@@ -1,62 +1,68 @@
+<script setup lang="ts">
+import { onMounted, ref } from "vue"
+
+import { health } from "./api"
+
+type SystemStatus = "checking" | "online" | "offline"
+
+const systemStatus = ref<SystemStatus>("checking")
+
+async function checkSystemStatus() {
+  systemStatus.value = "checking"
+
+  try {
+    const result = await health()
+    systemStatus.value =
+      result.code === 200 ? "online" : "offline"
+  } catch {
+    systemStatus.value = "offline"
+  }
+}
+
+onMounted(() => {
+  checkSystemStatus()
+})
+</script>
+
 <template>
-  <div>
-    <nav class="navbar">
-      <div class="logo">
-        球化监测系统
-      </div>
+  <div class="app-shell">
+    <header class="nav-bar">
+      <router-link
+        class="logo"
+        to="/"
+      >
+        <span class="logo-icon"></span>
+        采集管理
+      </router-link>
 
-      <div class="nav-links">
+      <nav class="nav-links">
         <router-link to="/">
-          首页
+          浇注工位监控
         </router-link>
 
-        <router-link to="/spheroidization">
-          球化记录
+        <router-link to="/records/abnormal">
+          异常记录
         </router-link>
+      </nav>
 
-        <router-link to="/standard">
-          检测标准
-        </router-link>
-      </div>
-    </nav>
+      <button
+        class="system-status"
+        type="button"
+        :class="systemStatus"
+        @click="checkSystemStatus"
+      >
+        {{
+          systemStatus === "online"
+            ? "系统正常"
+            : systemStatus === "offline"
+              ? "系统离线"
+              : "连接中"
+        }}
+      </button>
+    </header>
 
-    <main class="content">
+    <main class="app-content">
       <router-view />
     </main>
   </div>
 </template>
-
-<style scoped>
-.navbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-
-  padding: 16px 32px;
-
-  border-bottom: 1px solid #ddd;
-}
-
-.logo {
-  font-size: 20px;
-  font-weight: bold;
-}
-
-.nav-links {
-  display: flex;
-  gap: 24px;
-}
-
-.nav-links a {
-  color: #333;
-  text-decoration: none;
-}
-
-.nav-links a.router-link-active {
-  font-weight: bold;
-}
-
-.content {
-  padding: 32px;
-}
-</style>

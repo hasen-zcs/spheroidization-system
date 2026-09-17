@@ -8,11 +8,15 @@ import {
   createReview,
   processSpheroidization,
 } from "../api"
+import type {
+  ReviewRecord,
+  SpheroidizationRecord,
+} from "../api"
 
 const route = useRoute()
 
-const record = ref<any>(null)
-const reviews = ref<any[]>([])
+const record = ref<SpheroidizationRecord | null>(null)
+const reviews = ref<ReviewRecord[]>([])
 const loading = ref(true)
 
 const reviewResult = ref("正常")
@@ -92,7 +96,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="page">
+  <div class="detail-page">
 
     <div v-if="loading">
       正在加载数据...
@@ -139,13 +143,6 @@ onMounted(() => {
           </div>
 
           <div class="info-item">
-            <span>铁水重量</span>
-            <strong>
-              {{ record.iron_water_weight }}
-            </strong>
-          </div>
-
-          <div class="info-item">
             <span>球化开始时间</span>
             <strong>
               {{ record.spheroidization_start_time }}
@@ -178,15 +175,13 @@ onMounted(() => {
 
             <strong
               :class="
-                record.spheroidization_abnormal ||
-                record.entry_abnormal
+                record.spheroidization_abnormal
                   ? 'abnormal'
                   : 'normal'
               "
             >
               {{
-                record.spheroidization_abnormal ||
-                record.entry_abnormal
+                record.spheroidization_abnormal
                   ? "异常"
                   : "正常"
               }}
@@ -202,7 +197,10 @@ onMounted(() => {
           <div class="info-item">
             <span>实际球化时间</span>
             <strong>
-              {{ record.actual_spheroidization_time }}
+              {{
+                record.actual_spheroidization_time ??
+                "--"
+              }}
             </strong>
           </div>
 
@@ -210,27 +208,6 @@ onMounted(() => {
             <span>标准球化时间</span>
             <strong>
               {{ record.standard_spheroidization_time }}
-            </strong>
-          </div>
-
-          <div class="info-item">
-            <span>实际入料长度</span>
-            <strong>
-              {{ record.actual_entry_length }}
-            </strong>
-          </div>
-
-          <div class="info-item">
-            <span>标准入料长度</span>
-            <strong>
-              {{ record.standard_entry_length }}
-            </strong>
-          </div>
-
-          <div class="info-item">
-            <span>称重标准</span>
-            <strong>
-              {{ record.weighing_standard }}
             </strong>
           </div>
 
@@ -245,23 +222,6 @@ onMounted(() => {
             >
               {{
                 record.spheroidization_abnormal
-                  ? "异常"
-                  : "正常"
-              }}
-            </strong>
-          </div>
-
-          <div class="info-item">
-            <span>入料异常</span>
-            <strong
-              :class="
-                record.entry_abnormal
-                  ? 'abnormal'
-                  : 'normal'
-              "
-            >
-              {{
-                record.entry_abnormal
                   ? "异常"
                   : "正常"
               }}
@@ -649,6 +609,88 @@ button:hover {
   padding: 30px;
   text-align: center;
   color: #888;
+}
+
+.detail-page {
+  min-height: calc(100vh - 40px);
+  padding: 14px;
+  background: #f5f7fa;
+}
+
+.detail-page .page-header {
+  margin: 0 0 10px;
+  padding: 14px 16px;
+  background: #fff;
+  border: 1px solid #d9d9d9;
+}
+
+.detail-page .page-header h1 {
+  margin-bottom: 4px;
+  color: #003399;
+  font-size: 18px;
+}
+
+.detail-page .page-header a {
+  color: #1890ff;
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.detail-page .card {
+  max-width: 1200px;
+  margin: 0 auto 10px;
+  padding: 14px 16px;
+  background: #fff;
+  border: 1px solid #d9d9d9;
+}
+
+.detail-page .page-header + .card {
+  margin-top: 0;
+}
+
+.detail-page .card h2 {
+  margin-bottom: 14px;
+  font-size: 15px;
+}
+
+.detail-page .info-grid {
+  gap: 8px;
+}
+
+.detail-page .info-item {
+  padding: 11px 12px;
+}
+
+.detail-page .review-item {
+  padding: 12px;
+  margin-bottom: 8px;
+}
+
+.detail-page .review-form {
+  margin-top: 16px;
+  padding-top: 16px;
+}
+
+@media (max-width: 720px) {
+  .detail-page .info-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-page .page-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .detail-page .form-row,
+  .detail-page .process-form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .detail-page .form-row label {
+    justify-content: space-between;
+  }
 }
 
 </style>
