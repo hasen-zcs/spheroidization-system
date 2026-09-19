@@ -1,5 +1,6 @@
-const API_BASE_URL = "http://127.0.0.1:8000"
-
+//const API_BASE_URL = "http://127.0.0.1:8080"
+// 替换实际的内网地址
+const API_BASE_URL = "http://192.168.3.44:8080"
 export interface ApiResponse<T> {
   code: number
   message: string

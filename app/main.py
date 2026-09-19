@@ -28,12 +28,14 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        # 前端 vite 起在 5173。浏览器地址栏写 localhost 还是 127.0.0.1，
-        # 发过来的 Origin 就是哪个，两个都得放行，少一个就整个被 CORS 拦掉。
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
+    # allow_origins=[
+    #     # 前端 vite 起在 5173。浏览器地址栏写 localhost 还是 127.0.0.1，
+    #     # 发过来的 Origin 就是哪个，两个都得放行，少一个就整个被 CORS 拦掉。
+    #     "http://localhost:5173",
+    #     "http://127.0.0.1:5173",
+    #     "http://192.168.3.44:5173",
+    # ],
+    allow_origin_regex=".*",   
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -18,7 +18,7 @@
 启动后端：
 
 ```bash
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8080
 ```
 
 启动前端：
@@ -27,6 +27,7 @@ uvicorn app.main:app --reload
 cd frontend
 npm install
 npm run dev
+npm run dev -- --host 0.0.0.0 --port 3000
 ```
 
 然后访问：

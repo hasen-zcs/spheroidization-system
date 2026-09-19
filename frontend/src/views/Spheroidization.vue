@@ -34,8 +34,70 @@ const spheroidizationStartTime = ref(
 const spheroidizationEndTime = ref(
   "2026-09-06 18:01:15"
 )
-const actualSpheroidizationTime = ref(65)
 const spheroidizationAbnormal = ref(false)
+
+function parseDateTime(value: string): number | null {
+  const match = value.match(
+    /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/
+  )
+
+  if (!match) {
+    return null
+  }
+
+  const [
+    year,
+    month,
+    day,
+    hour,
+    minute,
+    second,
+  ] = match.slice(1).map(Number)
+
+  const date = new Date(
+    year,
+    month - 1,
+    day,
+    hour,
+    minute,
+    second
+  )
+
+  const isValid =
+    date.getFullYear() === year &&
+    date.getMonth() === month - 1 &&
+    date.getDate() === day &&
+    date.getHours() === hour &&
+    date.getMinutes() === minute &&
+    date.getSeconds() === second
+
+  return isValid ? date.getTime() : null
+}
+
+const actualSpheroidizationTime = computed<number | null>(() => {
+  const startTime = parseDateTime(
+    spheroidizationStartTime.value
+  )
+  const endTime = parseDateTime(
+    spheroidizationEndTime.value
+  )
+
+  if (
+    startTime === null ||
+    endTime === null ||
+    endTime < startTime
+  ) {
+    return null
+  }
+
+  return (endTime - startTime) / 1000
+})
+
+const actualSpheroidizationTimeText = computed(() => {
+  return actualSpheroidizationTime.value === null
+    ? "--"
+    : String(actualSpheroidizationTime.value)
+})
 
 async function loadRecords() {
   loading.value = true
@@ -54,6 +116,13 @@ async function loadRecords() {
 }
 
 async function submitCreate() {
+  if (actualSpheroidizationTime.value === null) {
+    alert(
+      "请检查球化开始和结束时间，格式应为 yyyy-mm-dd hh:mm:ss，且结束时间不能早于开始时间"
+    )
+    return
+  }
+
   const result = await createSpheroidization({
     detection_time: detectionTime.value,
     spheroidization_start_time:
@@ -210,12 +279,10 @@ onMounted(() => {
           </label>
 
           <label>
-            <span>实际球化时间</span>
+            <span>实际球化时间（秒）</span>
             <input
-              v-model.number="actualSpheroidizationTime"
-              min="0"
-              step="0.1"
-              type="number"
+              :value="actualSpheroidizationTimeText"
+              readonly
             />
           </label>
 
