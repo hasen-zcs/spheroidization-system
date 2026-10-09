@@ -1,0 +1,137 @@
+{
+  "format": "docx",
+  "verdict": "pass",
+  "checks": [
+    {
+      "id": "package",
+      "status": "pass"
+    },
+    {
+      "id": "contains",
+      "status": "pass",
+      "text": "\u8be6\u7ec6\u7248"
+    },
+    {
+      "id": "contains",
+      "status": "pass",
+      "text": "\u7403\u5316\u4eae\u5149\u5206\u6790\u66f2\u7ebf"
+    },
+    {
+      "id": "contains",
+      "status": "pass",
+      "text": "\u6807\u51c6\u5feb\u7167"
+    },
+    {
+      "id": "contains",
+      "status": "pass",
+      "text": "\u6807\u8bb0\u4e3a\u5df2\u5904\u7406"
+    },
+    {
+      "id": "contains",
+      "status": "pass",
+      "text": "\u7cbe\u7b80\u7248"
+    }
+  ],
+  "summary": {
+    "paragraphs": 386,
+    "tables": [
+      {
+        "rows": 5,
+        "columns": 2
+      },
+      {
+        "rows": 1,
+        "columns": 1
+      },
+      {
+        "rows": 5,
+        "columns": 3
+      },
+      {
+        "rows": 5,
+        "columns": 3
+      },
+      {
+        "rows": 1,
+        "columns": 1
+      },
+      {
+        "rows": 10,
+        "columns": 2
+      },
+      {
+        "rows": 6,
+        "columns": 2
+      },
+      {
+        "rows": 5,
+        "columns": 2
+      },
+      {
+        "rows": 12,
+        "columns": 2
+      },
+      {
+        "rows": 10,
+        "columns": 2
+      },
+      {
+        "rows": 1,
+        "columns": 1
+      },
+      {
+        "rows": 1,
+        "columns": 1
+      },
+      {
+        "rows": 7,
+        "columns": 2
+      },
+      {
+        "rows": 5,
+        "columns": 2
+      },
+      {
+        "rows": 1,
+        "columns": 1
+      },
+      {
+        "rows": 1,
+        "columns": 1
+      },
+      {
+        "rows": 6,
+        "columns": 2
+      },
+      {
+        "rows": 1,
+        "columns": 1
+      },
+      {
+        "rows": 1,
+        "columns": 1
+      },
+      {
+        "rows": 11,
+        "columns": 2
+      }
+    ],
+    "sections": [
+      {
+        "page_twips": {
+          "w": "11906",
+          "h": "16838"
+        },
+        "margins_twips": {
+          "top": "1134",
+          "right": "1247",
+          "bottom": "1134",
+          "left": "1247",
+          "header": "720",
+          "footer": "720",
+          "gutter": "0"
+        }
+      }
+    ]
+  }
+}
