@@ -203,7 +203,7 @@ onMounted(() => {
         <thead>
           <tr>
             <th>序号</th>
-            <th>球化重量</th>
+            <th>铁水重量</th>
             <th>测温时间</th>
             <th>温度</th>
             <th>进线开始时间</th>
@@ -211,7 +211,7 @@ onMounted(() => {
             <th>进线持续时间</th>
             <th>球化开始时间</th>
             <th>球化结束时间</th>
-            <th>球化时间</th>
+            <th>球化持续时长</th>
             <th>球化结果</th>
             <th>报警原因</th>
           </tr>
@@ -233,11 +233,19 @@ onMounted(() => {
             <td>{{ display(row.spheroidization_end_time) }}</td>
             <td>{{ display(row.actual_spheroidization_time) }}</td>
             <td>
-              {{
-                row.spheroidization_abnormal
-                  ? "异常"
-                  : "正常"
-              }}
+              <span
+                :class="
+                  row.spheroidization_abnormal
+                    ? 'result-abnormal'
+                    : 'result-normal'
+                "
+              >
+                {{
+                  row.spheroidization_abnormal
+                    ? "异常"
+                    : "正常"
+                }}
+              </span>
             </td>
             <td>{{ getAbnormalReason(row) }}</td>
           </tr>
@@ -406,8 +414,8 @@ onMounted(() => {
 
 table {
   width: 100%;
-  min-width: 1560px;
- font-size: 12px;
+  min-width: 0;
+  font-size: 12px;
   border-collapse: collapse;
   background: #fff;
 }
@@ -419,19 +427,21 @@ table {
 }
 
 th {
-  padding: 4px 7px;
+  padding: 4px 6px;
   color: #1a2a3a;
   font-weight: 700;
   background: #ffdd00;
   border: 1px solid #333;
+  white-space: nowrap;
 }
 
 td {
-  padding: 4px 7px;
+  padding: 4px 6px;
   color: #1a2a3a;
   text-align: center;
   background: #fff;
   border: 1px solid #333;
+  white-space: nowrap;
 }
 
 .empty-cell {
@@ -484,5 +494,18 @@ td {
     flex-direction: column;
   }
 
+}
+
+/* ---------- 保留：球化结果颜色 + 表格文字观感（2026-10-10） ---------- */
+table {
+  font-weight: 600;
+}
+
+.result-normal {
+  color: #16803c;
+}
+
+.result-abnormal {
+  color: #c62828;
 }
 </style>

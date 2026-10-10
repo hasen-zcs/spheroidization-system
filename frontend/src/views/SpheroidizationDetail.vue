@@ -197,6 +197,13 @@ onMounted(() => {
           </div>
 
           <div class="info-item">
+            <span>测温时间</span>
+            <strong>
+              {{ display(record.spheroidization_temperature_time) }}
+            </strong>
+          </div>
+
+          <div class="info-item">
             <span>球化开始时间</span>
             <strong>
               {{ record.spheroidization_start_time }}
@@ -225,13 +232,6 @@ onMounted(() => {
               {{
                 display(record.spheroidization_wire_entry_end_time)
               }}
-            </strong>
-          </div>
-
-          <div class="info-item">
-            <span>测温时间</span>
-            <strong>
-              {{ display(record.spheroidization_temperature_time) }}
             </strong>
           </div>
 
@@ -279,14 +279,14 @@ onMounted(() => {
               {{
                 record.actual_spheroidization_time ??
                 "--"
-              }}
+              }}s
             </strong>
           </div>
 
           <div class="info-item">
             <span>标准球化时间</span>
             <strong>
-              {{ record.standard_spheroidization_time }}
+              {{ record.standard_spheroidization_time }}s
             </strong>
           </div>
 
@@ -312,7 +312,7 @@ onMounted(() => {
             <strong>
               {{
                 display(record.spheroidization_wire_entry_total_duration)
-              }}
+              }}s
             </strong>
           </div>
 
@@ -321,14 +321,14 @@ onMounted(() => {
             <strong>
               {{
                 display(record.spheroidization_weight)
-              }}
+              }}kg
             </strong>
           </div>
 
           <div class="info-item">
             <span>温度</span>
             <strong>
-              {{ display(record.spheroidization_temperature) }}
+              {{ display(record.spheroidization_temperature) }}℃
             </strong>
           </div>
 
