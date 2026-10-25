@@ -36,12 +36,28 @@ onMounted(() => {
       </router-link>
 
       <nav class="nav-links">
-        <router-link to="/">
+        <router-link
+          to="/"
+          active-class="nav-link-idle"
+          exact-active-class="router-link-active"
+        >
           浇注工位监控
+        </router-link>
+
+        <router-link to="/records/home">
+          首页
+        </router-link>
+
+        <router-link to="/records/spheroidization">
+          球化记录
         </router-link>
 
         <router-link to="/records/abnormal">
           异常记录
+        </router-link>
+
+        <router-link to="/records/standard">
+          检测标准
         </router-link>
       </nav>
 

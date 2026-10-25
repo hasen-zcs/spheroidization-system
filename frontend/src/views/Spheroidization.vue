@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue"
-import { useRoute } from "vue-router"
+import { useRoute, useRouter } from "vue-router"
 
 import {
   createSpheroidization,
@@ -18,6 +18,7 @@ const props = withDefaults(
 )
 
 const route = useRoute()
+const router = useRouter()
 
 const records = ref<SpheroidizationRecord[]>([])
 const loading = ref(true)
@@ -83,6 +84,18 @@ async function loadRecords() {
   } finally {
     loading.value = false
   }
+}
+
+// 点击整行 = 点击“查看详情”，直接进入球化记录详情页
+function openDetail(record: SpheroidizationRecord, event: MouseEvent) {
+  const target = event.target as Element | null
+
+  // 行内的“查看详情”链接自己会跳转，这里不重复处理
+  if (target?.closest("a")) {
+    return
+  }
+
+  router.push(`/spheroidization/${record.id}`)
 }
 
 function readFileAsDataUrl(file: File) {
@@ -549,6 +562,8 @@ onMounted(() => {
             <tr
               v-for="record in records"
               :key="record.id"
+              class="row-clickable"
+              @click="openDetail(record, $event)"
             >
               <td>{{ record.id }}</td>
               <td>{{ record.detection_time }}</td>
@@ -891,6 +906,10 @@ tbody tr:nth-child(even) {
 
 tbody tr:hover {
   background: #e6f7ff;
+}
+
+.row-clickable {
+  cursor: pointer;
 }
 
 .table-link {

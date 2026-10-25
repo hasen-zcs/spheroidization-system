@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue"
+import { computed, nextTick, onMounted, onUnmounted, ref } from "vue"
 import { useRouter } from "vue-router"
 
 import { querySpheroidization } from "../api"
@@ -35,6 +35,9 @@ async function loadRecords() {
   } finally {
     loading.value = false
   }
+
+  await nextTick()
+  fitColumnsToContainer()
 }
 
 const tableRows = computed(() => {
@@ -106,7 +109,176 @@ function openCreateForm() {
   })
 }
 
+const tableScroll = ref<HTMLElement | null>(null)
+const tableEl = ref<HTMLTableElement | null>(null)
+
+// 表头分隔线可拖拽调整列宽（Excel 式），只作用于本页表格。
+// 前 9 列是固定宽度；最后一列（报警原因）自动吃掉剩余宽度，
+// 它的右边缘始终贴着容器右边，不会因为拖拽其它列而脱开。
+const MIN_COLUMN_WIDTH = 40
+const LAST_COLUMN_MIN = 72
+const LAST_COLUMN_INDEX = 9
+
+const columnWidths = ref<number[]>([
+  46, 78, 140, 140, 88, 140, 140, 100, 64, 72,
+])
+
+// 表格容器宽度（换算成表格自身像素，抵消页面 125% 缩放）
+const containerWidth = ref(0)
+// 真实像素 ÷ 表格像素，只在首次测量时确定一次
+let zoomFactor = 1
+
+const fixedTotal = computed(() =>
+  columnWidths.value
+    .slice(0, LAST_COLUMN_INDEX)
+    .reduce((sum, width) => sum + width, 0),
+)
+
+// 最后一列宽度 = 容器宽度 - 前面所有列的宽度，最小保留 LAST_COLUMN_MIN
+const lastColumnWidth = computed(() => {
+  const rest = containerWidth.value - fixedTotal.value
+  return Math.max(LAST_COLUMN_MIN, Math.round(rest))
+})
+
+// 真正写到 colgroup 上的列宽
+const effectiveWidths = computed(() => {
+  const widths = columnWidths.value.slice(0, LAST_COLUMN_INDEX)
+  widths.push(lastColumnWidth.value)
+  return widths
+})
+
+const totalWidth = computed(() =>
+  effectiveWidths.value.reduce((sum, width) => sum + width, 0),
+)
+
+let hasFittedColumns = false
+
+function measureZoomFactor() {
+  const table = tableEl.value
+  const rendered = totalWidth.value
+
+  if (!table || rendered <= 0) {
+    return
+  }
+
+  const tableWidth = table.getBoundingClientRect().width
+
+  if (tableWidth > 0) {
+    zoomFactor = tableWidth / rendered
+  }
+}
+
+function measureContainerWidth() {
+  const scroll = tableScroll.value
+
+  if (!scroll || zoomFactor <= 0) {
+    return
+  }
+
+  const scrollWidth = scroll.getBoundingClientRect().width
+
+  if (scrollWidth > 0) {
+    containerWidth.value = scrollWidth / zoomFactor
+  }
+}
+
+function handleWindowResize() {
+  measureContainerWidth()
+}
+
+// 首次渲染时按容器宽度等比铺满（最后一列保留默认宽度）；
+// 之后拖拽只改变被拖的那一列，其它列宽度不变。
+function fitColumnsToContainer() {
+  if (!hasFittedColumns) {
+    measureZoomFactor()
+  }
+
+  measureContainerWidth()
+
+  if (hasFittedColumns) {
+    return
+  }
+
+  const defaultLastWidth = columnWidths.value[LAST_COLUMN_INDEX] ?? LAST_COLUMN_MIN
+  const available = containerWidth.value - defaultLastWidth
+
+  if (available > 0 && fixedTotal.value > 0) {
+    const scale = available / fixedTotal.value
+
+    if (scale > 1) {
+      columnWidths.value = columnWidths.value.map((width, index) =>
+        index === LAST_COLUMN_INDEX ? width : Math.round(width * scale),
+      )
+    }
+  }
+
+  hasFittedColumns = true
+}
+
+interface ResizeState {
+  index: number
+  startX: number
+  startWidth: number
+  factor: number
+}
+
+let resizeState: ResizeState | null = null
+
+function startResize(index: number, event: MouseEvent) {
+  const handle = event.currentTarget as HTMLElement | null
+  const header = handle?.parentElement ?? null
+
+  if (!header) {
+    return
+  }
+
+  const startWidth = columnWidths.value[index] ?? 80
+  const measured = header.getBoundingClientRect().width / startWidth
+  const factor = measured > 0 ? measured : 1
+
+  resizeState = {
+    index,
+    startX: event.clientX,
+    startWidth,
+    factor,
+  }
+
+  document.addEventListener("mousemove", onResizeMove)
+  document.addEventListener("mouseup", stopResize)
+  document.body.style.cursor = "col-resize"
+  document.body.style.userSelect = "none"
+}
+
+function onResizeMove(event: MouseEvent) {
+  if (!resizeState) {
+    return
+  }
+
+  const delta = (event.clientX - resizeState.startX) / resizeState.factor
+  const next = Math.max(
+    MIN_COLUMN_WIDTH,
+    Math.round(resizeState.startWidth + delta),
+  )
+  const list = [...columnWidths.value]
+  list[resizeState.index] = next
+  columnWidths.value = list
+}
+
+function stopResize() {
+  resizeState = null
+  document.removeEventListener("mousemove", onResizeMove)
+  document.removeEventListener("mouseup", stopResize)
+  document.body.style.cursor = ""
+  document.body.style.userSelect = ""
+}
+
+onUnmounted(() => {
+  window.removeEventListener("resize", handleWindowResize)
+  stopResize()
+})
+
 onMounted(() => {
+  window.addEventListener("resize", handleWindowResize)
   loadRecords()
 })
 </script>
@@ -197,23 +369,89 @@ onMounted(() => {
 
     <div
       v-else
+      ref="tableScroll"
       class="table-scroll"
     >
-      <table>
+      <table
+        ref="tableEl"
+        :style="{ width: totalWidth + 'px' }"
+      >
+        <colgroup>
+          <col
+            v-for="(width, index) in effectiveWidths"
+            :key="index"
+            :style="{ width: width + 'px' }"
+          />
+        </colgroup>
+
         <thead>
           <tr>
-            <th>序号</th>
-            <th>球化重量</th>
-            <th>测温时间</th>
-            <th>温度</th>
-            <th>进线开始时间</th>
-            <th>进线结束时间</th>
-            <th>进线持续时间</th>
-            <th>球化开始时间</th>
-            <th>球化结束时间</th>
-            <th>球化时间</th>
-            <th>球化结果</th>
-            <th>报警原因</th>
+            <th>
+              序号
+              <span
+                class="col-resizer"
+                @mousedown.prevent="startResize(0, $event)"
+              />
+            </th>
+            <th>
+              铁水重量
+              <span
+                class="col-resizer"
+                @mousedown.prevent="startResize(1, $event)"
+              />
+            </th>
+            <th>
+              进线开始时间
+              <span
+                class="col-resizer"
+                @mousedown.prevent="startResize(2, $event)"
+              />
+            </th>
+            <th>
+              进线结束时间
+              <span
+                class="col-resizer"
+                @mousedown.prevent="startResize(3, $event)"
+              />
+            </th>
+            <th>
+              进线持续时间
+              <span
+                class="col-resizer"
+                @mousedown.prevent="startResize(4, $event)"
+              />
+            </th>
+            <th>
+              球化开始时间
+              <span
+                class="col-resizer"
+                @mousedown.prevent="startResize(5, $event)"
+              />
+            </th>
+            <th>
+              球化结束时间
+              <span
+                class="col-resizer"
+                @mousedown.prevent="startResize(6, $event)"
+              />
+            </th>
+            <th>
+              球化持续时长
+              <span
+                class="col-resizer"
+                @mousedown.prevent="startResize(7, $event)"
+              />
+            </th>
+            <th>
+              球化结果
+              <span
+                class="col-resizer"
+                @mousedown.prevent="startResize(8, $event)"
+              />
+            </th>
+            <th>
+              报警原因
+            </th>
           </tr>
         </thead>
 
@@ -224,8 +462,6 @@ onMounted(() => {
           >
             <td>{{ row.id }}</td>
             <td>{{ display(row.spheroidization_weight) }}</td>
-            <td>{{ display(row.spheroidization_temperature_time) }}</td>
-            <td>{{ display(row.spheroidization_temperature) }}</td>
             <td>{{ display(row.spheroidization_wire_entry_start_time) }}</td>
             <td>{{ display(row.spheroidization_wire_entry_end_time) }}</td>
             <td>{{ display(row.spheroidization_wire_entry_total_duration) }}</td>
@@ -233,11 +469,19 @@ onMounted(() => {
             <td>{{ display(row.spheroidization_end_time) }}</td>
             <td>{{ display(row.actual_spheroidization_time) }}</td>
             <td>
-              {{
-                row.spheroidization_abnormal
-                  ? "异常"
-                  : "正常"
-              }}
+              <span
+                :class="
+                  row.spheroidization_abnormal
+                    ? 'result-abnormal'
+                    : 'result-normal'
+                "
+              >
+                {{
+                  row.spheroidization_abnormal
+                    ? "异常"
+                    : "正常"
+                }}
+              </span>
             </td>
             <td>{{ getAbnormalReason(row) }}</td>
           </tr>
@@ -245,7 +489,7 @@ onMounted(() => {
           <tr v-if="tableRows.length === 0">
             <td
               class="empty-cell"
-              colspan="12"
+              colspan="10"
             >
               暂无检测记录
             </td>
@@ -303,9 +547,11 @@ onMounted(() => {
 </template>
 
 <style scoped>
+/* 整页放大到 125%（等同浏览器缩放 125%），只作用于本页面 */
 .home-wrapper {
-  min-height: calc(100vh - 40px);
+  min-height: calc((100vh - 40px) / 1.25);
   padding: 10px 12px;
+  zoom: 1.25;
   background: #f0f4f8;
 }
 
@@ -405,10 +651,10 @@ onMounted(() => {
 }
 
 table {
-  width: 100%;
-  min-width: 1560px;
- font-size: 12px;
+  min-width: 0;
+  font-size: 12px;
   border-collapse: collapse;
+  table-layout: fixed;
   background: #fff;
 }
 
@@ -419,19 +665,26 @@ table {
 }
 
 th {
-  padding: 4px 7px;
+  position: relative;
+  padding: 4px 6px;
   color: #1a2a3a;
   font-weight: 700;
   background: #ffdd00;
   border: 1px solid #333;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 td {
-  padding: 4px 7px;
+  padding: 4px 6px;
   color: #1a2a3a;
   text-align: center;
   background: #fff;
   border: 1px solid #333;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .empty-cell {
@@ -484,5 +737,34 @@ td {
     flex-direction: column;
   }
 
+}
+
+/* ---------- 保留：球化结果颜色 + 表格文字观感（2026-10-10） ---------- */
+table {
+  font-weight: 600;
+}
+
+.result-normal {
+  color: #16803c;
+}
+
+.result-abnormal {
+  color: #c62828;
+}
+
+/* ---------- 表头可拖拽调整列宽（2026-10-11） ---------- */
+.col-resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 3;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+  user-select: none;
+}
+
+.col-resizer:hover {
+  background: rgba(0, 0, 0, 0.22);
 }
 </style>

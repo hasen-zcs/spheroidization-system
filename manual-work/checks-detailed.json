@@ -9,35 +9,24 @@
     {
       "id": "contains",
       "status": "pass",
-      "text": "\u8be6\u7ec6\u7248"
+      "text": "AI\u7403\u5316\u68c0\u6d4b\u7cfb\u7edf"
     },
     {
       "id": "contains",
       "status": "pass",
-      "text": "\u7403\u5316\u4eae\u5149\u5206\u6790\u66f2\u7ebf"
-    },
-    {
-      "id": "contains",
-      "status": "pass",
-      "text": "\u6807\u51c6\u5feb\u7167"
-    },
-    {
-      "id": "contains",
-      "status": "pass",
-      "text": "\u6807\u8bb0\u4e3a\u5df2\u5904\u7406"
-    },
-    {
-      "id": "contains",
-      "status": "pass",
-      "text": "\u7cbe\u7b80\u7248"
+      "text": "\u975e\u5fc5\u8981\u4e0d\u8981\u65b0\u589e"
     }
   ],
   "summary": {
-    "paragraphs": 386,
+    "paragraphs": 394,
     "tables": [
       {
         "rows": 5,
         "columns": 2
+      },
+      {
+        "rows": 1,
+        "columns": 1
       },
       {
         "rows": 1,
@@ -50,6 +39,10 @@
       {
         "rows": 5,
         "columns": 3
+      },
+      {
+        "rows": 1,
+        "columns": 1
       },
       {
         "rows": 1,
@@ -70,6 +63,10 @@
       {
         "rows": 12,
         "columns": 2
+      },
+      {
+        "rows": 1,
+        "columns": 1
       },
       {
         "rows": 10,
