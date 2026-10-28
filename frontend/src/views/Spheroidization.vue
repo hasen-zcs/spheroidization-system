@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue"
+import { computed, onMounted, onUnmounted, ref, watch } from "vue"
 import { useRoute, useRouter } from "vue-router"
 
 import {
@@ -52,8 +52,10 @@ const spheroidizationImagePreview = ref("")
 const spheroidizationImageName = ref("")
 const imageError = ref("")
 
-async function loadRecords() {
-  loading.value = true
+async function loadRecords(silent = false) {
+  if (!silent) {
+    loading.value = true
+  }
   errorMessage.value = ""
 
   try {
@@ -85,6 +87,49 @@ async function loadRecords() {
     loading.value = false
   }
 }
+
+// 自动轮询：每 30 秒静默刷新一次，数据入库后无需手动刷新页面
+const POLL_INTERVAL_MS = 30000
+let pollTimer: number | null = null
+let visibilityHandler: (() => void) | null = null
+
+function startPolling() {
+  if (pollTimer !== null) {
+    return
+  }
+  pollTimer = window.setInterval(() => {
+    // 新增表单打开时不刷新，避免覆盖用户正在填写的内容
+    if (showCreateForm.value) {
+      return
+    }
+    void loadRecords(true)
+  }, POLL_INTERVAL_MS)
+  // 从后台切回页面时立即刷新一次（后台期间可能漏了数据）
+  visibilityHandler = () => {
+    if (
+      document.visibilityState === "visible" &&
+      !showCreateForm.value
+    ) {
+      void loadRecords(true)
+    }
+  }
+  document.addEventListener("visibilitychange", visibilityHandler)
+}
+
+function stopPolling() {
+  if (pollTimer !== null) {
+    window.clearInterval(pollTimer)
+    pollTimer = null
+  }
+  if (visibilityHandler) {
+    document.removeEventListener("visibilitychange", visibilityHandler)
+    visibilityHandler = null
+  }
+}
+
+onUnmounted(() => {
+  stopPolling()
+})
 
 // 点击整行 = 点击“查看详情”，直接进入球化记录详情页
 function openDetail(record: SpheroidizationRecord, event: MouseEvent) {
@@ -278,6 +323,7 @@ onMounted(() => {
 
   openCreateFormIfRequested()
   loadRecords()
+  startPolling()
 })
 </script>
 
@@ -313,7 +359,7 @@ onMounted(() => {
         <button
           class="secondary-button"
           type="button"
-          @click="loadRecords"
+          @click="loadRecords()"
         >
           刷新
         </button>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue"
+import { computed, onMounted, onUnmounted, ref } from "vue"
 
 import {
   getSpheroidizationStats,
@@ -18,8 +18,10 @@ const statistics = ref<SpheroidizationStats>({
   unprocessed: 0,
 })
 
-async function loadRecords() {
-  loading.value = true
+async function loadRecords(silent = false) {
+  if (!silent) {
+    loading.value = true
+  }
   errorMessage.value = ""
 
   try {
@@ -63,8 +65,41 @@ const recentRecords = computed(() => {
   return [...records.value].sort((a, b) => b.id - a.id)
 })
 
+// 自动轮询：每 30 秒静默刷新一次，新数据入库后无需手动刷新
+const POLL_INTERVAL_MS = 30000
+let pollTimer: number | null = null
+let visibilityHandler: (() => void) | null = null
+
+function startPolling() {
+  if (pollTimer !== null) {
+    return
+  }
+  pollTimer = window.setInterval(() => {
+    void loadRecords(true)
+  }, POLL_INTERVAL_MS)
+  // 从后台切回页面时立即刷新一次
+  visibilityHandler = () => {
+    if (document.visibilityState === "visible") {
+      void loadRecords(true)
+    }
+  }
+  document.addEventListener("visibilitychange", visibilityHandler)
+}
+
+onUnmounted(() => {
+  if (pollTimer !== null) {
+    window.clearInterval(pollTimer)
+    pollTimer = null
+  }
+  if (visibilityHandler) {
+    document.removeEventListener("visibilitychange", visibilityHandler)
+    visibilityHandler = null
+  }
+})
+
 onMounted(() => {
   loadRecords()
+  startPolling()
 })
 </script>
 
@@ -79,7 +114,7 @@ onMounted(() => {
       <button
         class="secondary-button"
         type="button"
-        @click="loadRecords"
+        @click="loadRecords()"
       >
         刷新
       </button>

@@ -11,8 +11,13 @@ const router = useRouter()
 // const videoFeed2 = `${videoBaseUrl}/video_feed2`
 // const videoFeed1 = `http://10.0.0.19:5080/video_feed1`
 // const videoFeed2 = `http://10.0.0.19:5080/video_feed2`
-const videoFeed1 = `/api/video_feed1`
-const videoFeed2 = `/api/video_feed2`
+const videoFeed1 = ref(`/api/video_feed1`)
+const videoFeed2 = ref(`/api/video_feed2`)
+
+function refreshVideoFeeds() {
+  videoFeed1.value = `/api/video_feed1?t=${Date.now()}`
+  videoFeed2.value = `/api/video_feed2?t=${Date.now()}`
+}
 
 
 const records = ref<SpheroidizationRecord[]>([])
@@ -20,8 +25,10 @@ const loading = ref(true)
 const errorMessage = ref("")
 const videoErrors = ref([false, false])
 
-async function loadRecords() {
-  loading.value = true
+async function loadRecords(silent = false) {
+  if (!silent) {
+    loading.value = true
+  }
   errorMessage.value = ""
 
   try {
@@ -272,14 +279,50 @@ function stopResize() {
   document.body.style.userSelect = ""
 }
 
+// 自动轮询：每 30 秒静默刷新数据 + 视频帧，无需手动刷新
+const POLL_INTERVAL_MS = 30000
+let pollTimer: number | null = null
+let visibilityHandler: (() => void) | null = null
+
+function startPolling() {
+  if (pollTimer !== null) {
+    return
+  }
+  pollTimer = window.setInterval(() => {
+    refreshVideoFeeds()
+    void loadRecords(true)
+  }, POLL_INTERVAL_MS)
+  // 从后台切回页面时立即刷新一次
+  visibilityHandler = () => {
+    if (document.visibilityState === "visible") {
+      refreshVideoFeeds()
+      void loadRecords(true)
+    }
+  }
+  document.addEventListener("visibilitychange", visibilityHandler)
+}
+
+function stopPolling() {
+  if (pollTimer !== null) {
+    window.clearInterval(pollTimer)
+    pollTimer = null
+  }
+  if (visibilityHandler) {
+    document.removeEventListener("visibilitychange", visibilityHandler)
+    visibilityHandler = null
+  }
+}
+
 onUnmounted(() => {
   window.removeEventListener("resize", handleWindowResize)
   stopResize()
+  stopPolling()
 })
 
 onMounted(() => {
   window.addEventListener("resize", handleWindowResize)
   loadRecords()
+  startPolling()
 })
 </script>
 
