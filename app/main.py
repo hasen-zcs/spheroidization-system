@@ -1,17 +1,20 @@
 import os
 import sqlite3
+from pathlib import Path
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api import spheroidization
 from app.api import review
 from app.api import standard
 from app.api import temperature
 from app.api import user
+from app.api import video
 from app.core.exceptions import BusinessException
 from app.dependencies import get_container
 
@@ -52,6 +55,7 @@ app.include_router(review.router)
 app.include_router(standard.router)
 app.include_router(temperature.router)
 app.include_router(user.router)
+app.include_router(video.router)
 
 
 @app.exception_handler(BusinessException)
@@ -129,3 +133,31 @@ def health_check():
             "status": "running"
         }
     }
+
+
+# ---------------------------------------------------------------------------
+# 前端静态托管（打包后单进程部署用）
+#
+# 有 frontend/dist 就直接由后端托管，前后端同源，不用再配 nginx：
+#   - /assets/*  静态资源（带 hash，可长缓存）
+#   - 其它路径   SPA 兜底，全部回 index.html（前端路由自己接管）
+#   - /api/*     永不兜底，避免"接口写错了返回一张 HTML"这种难查的故障
+# ---------------------------------------------------------------------------
+DIST_DIR = Path(__file__).resolve().parents[1] / "frontend" / "dist"
+
+if DIST_DIR.is_dir():
+    _assets = DIST_DIR / "assets"
+    if _assets.is_dir():
+        app.mount("/assets", StaticFiles(directory=_assets), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def serve_frontend(full_path: str):
+        if full_path.startswith("api/"):
+            return JSONResponse(
+                {"code": 404, "message": "接口不存在", "data": None},
+                status_code=404,
+            )
+        target = DIST_DIR / full_path
+        if full_path and target.is_file():
+            return FileResponse(target)
+        return FileResponse(DIST_DIR / "index.html")

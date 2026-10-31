@@ -262,7 +262,9 @@ def get_spheroidization_image(
 @router.post("/{record_id}/process")
 def process_spheroidization(
     record_id: int,
-    data: SpheroidizationProcessRequest,
+    # 前端 processSpheroidization() 是裸 POST、不带 body；这里必须允许空，
+    # 否则 FastAPI 直接 422，按钮永远点不动。请求模型本身也是空的（处理人取登录态）。
+    data: SpheroidizationProcessRequest | None = None,
     session: Session = Depends(require_permission(P.ACTION_PROCESS)),
     uc: ProcessSpheroidizationUseCase = Depends(get_process_spheroidization_uc),
 ):

@@ -12,6 +12,32 @@ export const ABNORMAL_TYPE_LABELS: Record<number, string> = {
   6: "未判定",
 }
 
+/** 机器检测结果的三态：true 异常 / false 正常 / null 未判定。
+ *
+ * 后端 abnormal_type 允许为空（机器没判出来），页面不能把"没判定"显示成"正常"——
+ * 质量系统里这等于替机器下结论。
+ */
+export type AbnormalTone = "abnormal" | "normal" | "pending"
+
+export function abnormalTone(
+  value: boolean | number | null | undefined
+): AbnormalTone {
+  if (value === null || value === undefined) {
+    return "pending"
+  }
+  return value ? "abnormal" : "normal"
+}
+
+export function abnormalResultLabel(
+  value: boolean | number | null | undefined
+): string {
+  const tone = abnormalTone(value)
+  if (tone === "pending") {
+    return "未判定"
+  }
+  return tone === "abnormal" ? "异常" : "正常"
+}
+
 export function abnormalTypeLabel(
   type: number | null | undefined
 ): string {

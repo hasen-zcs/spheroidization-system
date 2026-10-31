@@ -156,7 +156,12 @@ def to_response(
         "spheroidization_start_time": record.spheroidization_start_time,
         "spheroidization_end_time": record.spheroidization_end_time,
         "actual_spheroidization_time": record.actual_spheroidization_time,
-        "spheroidization_abnormal": record.spheroidization_abnormal,
+        # 0/1 -> 布尔；None 保持 None（机器没给判定，不能冒充"正常"）
+        "spheroidization_abnormal": (
+            None
+            if record.spheroidization_abnormal is None
+            else bool(record.spheroidization_abnormal)
+        ),
         "standard_spheroidization_time": record.standard_spheroidization_time,
         # 异常分类和说明原样透传，不做任何映射
         "abnormal_type": record.abnormal_type,
@@ -173,7 +178,7 @@ def to_response(
         "spheroidization_weight": record.spheroidization_weight,
         "temperature": temperature.temperature if temperature else None,
         "temperature_time": temperature.measured_at if temperature else None,
-        "processed": record.processed,
+        "processed": bool(record.processed),
         "processed_at": record.processed_at,
         "processed_by": record.processed_by,
         "review_result": (

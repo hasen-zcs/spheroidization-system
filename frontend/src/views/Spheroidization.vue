@@ -8,7 +8,11 @@ import {
 } from "../api"
 import type { SpheroidizationRecord } from "../api"
 import { can } from "../auth"
-import { abnormalTypeLabel } from "../constants"
+import {
+  abnormalResultLabel,
+  abnormalTone,
+  abnormalTypeLabel,
+} from "../constants"
 
 const props = withDefaults(
   defineProps<{
@@ -333,16 +337,10 @@ onMounted(() => {
               </td>
               <td>
                 <span
-                  :class="
-                    record.spheroidization_abnormal
-                      ? 'status-abnormal'
-                      : 'status-normal'
-                  "
+                  :class="`status-${abnormalTone(record.spheroidization_abnormal)}`"
                 >
                   {{
-                    record.spheroidization_abnormal
-                      ? "异常"
-                      : "正常"
+                    abnormalResultLabel(record.spheroidization_abnormal)
                   }}
                 </span>
               </td>

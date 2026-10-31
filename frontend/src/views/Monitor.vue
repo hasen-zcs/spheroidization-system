@@ -12,14 +12,21 @@ import type {
   SpheroidizationRecord,
 } from "../api"
 import { can } from "../auth"
-import { abnormalTypeLabel } from "../constants"
+import {
+  abnormalResultLabel,
+  abnormalTone,
+  abnormalTypeLabel,
+} from "../constants"
 
-const videoFeed1 = ref(`/api/video_feed1`)
-const videoFeed2 = ref(`/api/video_feed2`)
+// 视频服务不在本后端里（现场是独立 5080）。开发走 Vite 代理 /api/video_feed*，
+// 生产用 VITE_VIDEO_BASE_URL 指到视频服务，避免打包后写死一个不存在的路径。
+const videoBase = (import.meta.env.VITE_VIDEO_BASE_URL ?? "/api").replace(/\/$/, "")
+const videoFeed1 = ref(`${videoBase}/video_feed1`)
+const videoFeed2 = ref(`${videoBase}/video_feed2`)
 
 function refreshVideoFeeds() {
-  videoFeed1.value = `/api/video_feed1?t=${Date.now()}`
-  videoFeed2.value = `/api/video_feed2?t=${Date.now()}`
+  videoFeed1.value = `${videoBase}/video_feed1?t=${Date.now()}`
+  videoFeed2.value = `${videoBase}/video_feed2?t=${Date.now()}`
 }
 
 const records = ref<SpheroidizationRecord[]>([])
@@ -258,9 +265,7 @@ const statusInfo = computed(() => {
       : "--",
     detectionTime: record ? record.detection_time : "--",
     machineResult: record
-      ? record.spheroidization_abnormal
-        ? "异常"
-        : "正常"
+      ? abnormalResultLabel(record.spheroidization_abnormal)
       : "--",
     processedBy: record ? record.processed_by ?? "--" : "--",
     temperature: record ? display(record.temperature) : "--",
@@ -278,6 +283,9 @@ function display(value: string | number | null | undefined) {
 }
 
 function getAbnormalReason(record: SpheroidizationRecord) {
+  if (record.spheroidization_abnormal === null) {
+    return "未判定"
+  }
   if (!record.spheroidization_abnormal) {
     return "无"
   }
@@ -831,16 +839,10 @@ onMounted(() => {
             <td>{{ display(row.actual_spheroidization_time) }}</td>
             <td>
               <span
-                :class="
-                  row.spheroidization_abnormal
-                    ? 'result-abnormal'
-                    : 'result-normal'
-                "
+                :class="`result-${abnormalTone(row.spheroidization_abnormal)}`"
               >
                 {{
-                  row.spheroidization_abnormal
-                    ? "异常"
-                    : "正常"
+                  abnormalResultLabel(row.spheroidization_abnormal)
                 }}
               </span>
             </td>
@@ -1244,6 +1246,10 @@ table {
 
 .result-abnormal {
   color: #c62828;
+}
+
+.result-pending {
+  color: #8a8578;
 }
 
 /* ---------- 表头可拖拽调整列宽（2026-10-11） ---------- */

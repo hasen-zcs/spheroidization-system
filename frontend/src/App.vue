@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from "vue"
 import { useRoute, useRouter } from "vue-router"
 
-import { health, logout } from "./api"
+import { getCurrentUser, health, logout } from "./api"
 import {
   can,
   clearSession,
@@ -62,6 +62,13 @@ function handleApiForbidden(event: Event) {
 
 onMounted(() => {
   checkSystemStatus()
+  // 本地还存着登录态时，用 /me 验一次：
+  // 过期 token 会在请求层触发 401 → 清登录态 → 跳登录页。
+  // 不做这一步的话，公开页（监控/首页）用的是游客接口，永远不报 401，
+  // 界面上一直挂着"某某已登录"，实际所有写操作都会失败。
+  if (isLoggedIn()) {
+    void getCurrentUser()
+  }
   window.addEventListener("api:forbidden", handleApiForbidden)
 })
 

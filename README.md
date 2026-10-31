@@ -34,6 +34,23 @@ cd frontend && npm install && npm run dev     # 5173，代理到 8000
 cd frontend && npm run build                  # dist/
 ```
 
+## 部署（单进程，前后端同源）
+
+`frontend/dist` 存在时，后端会直接托管前端：
+
+```bash
+cd frontend && npm run build
+cd .. && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
+```
+
+- `/`、`/records/*` 等前端路由 → 回 `index.html`（SPA 兜底）
+- `/assets/*` → 静态资源
+- `/api/*` → 永不兜底，写错的接口返回 JSON 信封 404
+- `/api/video_feed1|2` → 反向代理到视频服务，地址由 `VIDEO_FEED_BASE` 指定
+  （默认 `http://127.0.0.1:5080`）
+
+环境变量：`CORS_ORIGINS`（默认只放行 5173 开发端口）、`VIDEO_FEED_BASE`。
+
 **必须 `--workers 1`**：会话存在进程内存里，多 worker 会随机 401、重启即掉线。
 
 ## 与旧版（2026-09 v1.2）的关键差异
@@ -57,7 +74,7 @@ cd frontend && npm run build                  # dist/
 ## 测试
 
 ```bash
-pytest -q                     # 93 passed
+pytest -q                     # 102 passed
 cd frontend && npm run build  # 含 vue-tsc 类型检查
 ```
 

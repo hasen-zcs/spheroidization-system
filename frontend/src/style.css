@@ -212,6 +212,10 @@ a {
   font-weight: 600;
 }
 
+.status-pending {
+  color: #8a8578;
+}
+
 .status-abnormal {
   color: #c62828;
   font-weight: 600;

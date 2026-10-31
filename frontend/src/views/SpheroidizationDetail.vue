@@ -13,7 +13,11 @@ import type {
   SpheroidizationRecord,
 } from "../api"
 import { can } from "../auth"
-import { abnormalTypeLabel } from "../constants"
+import {
+  abnormalResultLabel,
+  abnormalTone,
+  abnormalTypeLabel,
+} from "../constants"
 
 const route = useRoute()
 
@@ -252,16 +256,10 @@ onMounted(() => {
             <span>机器检测结果</span>
 
             <strong
-              :class="
-                record.spheroidization_abnormal
-                  ? 'abnormal'
-                  : 'normal'
-              "
+              :class="abnormalTone(record.spheroidization_abnormal)"
             >
               {{
-                record.spheroidization_abnormal
-                  ? "异常"
-                  : "正常"
+                abnormalResultLabel(record.spheroidization_abnormal)
               }}
             </strong>
 
@@ -292,16 +290,10 @@ onMounted(() => {
           <div class="info-item">
             <span>球化异常</span>
             <strong
-              :class="
-                record.spheroidization_abnormal
-                  ? 'abnormal'
-                  : 'normal'
-              "
+              :class="abnormalTone(record.spheroidization_abnormal)"
             >
               {{
-                record.spheroidization_abnormal
-                  ? "异常"
-                  : "正常"
+                abnormalResultLabel(record.spheroidization_abnormal)
               }}
             </strong>
           </div>
@@ -334,11 +326,7 @@ onMounted(() => {
           <div class="info-item">
             <span>异常类型</span>
             <strong
-              :class="
-                record.spheroidization_abnormal
-                  ? 'abnormal'
-                  : 'normal'
-              "
+              :class="abnormalTone(record.spheroidization_abnormal)"
             >
               {{ abnormalTypeLabel(record.abnormal_type) }}
             </strong>
@@ -599,6 +587,10 @@ onMounted(() => {
 
 .abnormal {
   color: #c62828;
+}
+
+.pending {
+  color: #8a8578;
 }
 
 .unprocessed {
