@@ -46,7 +46,8 @@ def _record_payload(**overrides):
 
 
 @pytest.fixture
-def env(tmp_path):
+def env(tmp_path, monkeypatch):
+    monkeypatch.setenv("SPHEROIDIZATION_DB", str(tmp_path / "test.db"))
     conn = sqlite3.connect(":memory:", check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
@@ -246,3 +247,27 @@ def test_未判定记录不冒充正常也不计入异常(env):
     stats = client.get("/api/spheroidization/stats").json()["data"]
     assert stats["total"] == 1
     assert stats["abnormal"] == 0
+
+
+def test_按钮时刻可入库并随响应返回(env):
+    """plc_button_time 是按钮原始时刻，detection_time 是锚点，两者分开存。"""
+    client, _ = env
+    _body, headers = _login(client)
+    client.post("/api/standards", json=_standard_payload(), headers=headers)
+
+    body = client.post(
+        "/api/spheroidization",
+        json=_record_payload(
+            detection_time="2026-10-31 10:00:00",
+            plc_button_time="2026-10-31 09:59:58",
+        ),
+    ).json()
+    assert body["code"] == 200, body
+    record = body["data"]
+    assert record["plc_button_time"] == "2026-10-31 09:59:58"
+    assert record["detection_time"] == "2026-10-31 10:00:00"
+
+    detail = client.get(
+        f"/api/spheroidization/{record['id']}", headers=headers
+    ).json()["data"]
+    assert detail["plc_button_time"] == "2026-10-31 09:59:58"

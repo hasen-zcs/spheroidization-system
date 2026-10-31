@@ -106,12 +106,25 @@ def _main_table_ddl() -> str:
     return m.group(0)
 
 
+def _ensure_v2_columns(conn) -> None:
+    """v2：主表加 plc_button_time（按钮原始时刻）。
+
+    只用 ALTER TABLE ADD COLUMN，不重建表，可在线执行；
+    已有记录该列为 NULL，语义就是"当时没有按钮数据"。
+    """
+    columns = _columns(conn, MAIN_TABLE)
+    if "plc_button_time" in columns:
+        return
+    print("  加列 SpheroidizationRecord.plc_button_time")
+    conn.execute(f"ALTER TABLE {MAIN_TABLE} ADD COLUMN plc_button_time TEXT")
+
+
 def _is_migrated(conn) -> bool:
     tables = _tables(conn)
     if MAIN_TABLE not in tables:
         return False
     cols = set(_columns(conn, MAIN_TABLE))
-    has_new_cols = {"abnormal_type", "abnormal_reason"} <= cols
+    has_new_cols = {"abnormal_type", "abnormal_reason", "plc_button_time"} <= cols
     no_old_cols = not (set(OLD_ONLY_COLUMNS) & cols)
     return has_new_cols and no_old_cols
 
@@ -155,6 +168,29 @@ def migrate(db_path: Path, dry_run: bool = False) -> int:
         backup = _backup(db_path)
         print(f"已备份：{backup}")
 
+        # 已经是"新版主表结构、只缺 v2 列"的库：只加列+补表，不重建。
+        # 重建一次 130MB 的表没必要，而且风险高。
+        needs_rebuild = (
+            bool(set(OLD_ONLY_COLUMNS) & set(old_cols))
+            or not ({"abnormal_type", "abnormal_reason"} <= set(old_cols))
+        )
+        if not needs_rebuild:
+            conn.isolation_level = None
+            conn.execute("BEGIN")
+            existing = _tables(conn)
+            for name, stmt in _schema_statements():
+                if stmt.lstrip().upper().startswith("CREATE TABLE"):
+                    if name in existing:
+                        continue
+                    print(f"  建表 {name}")
+                conn.execute(stmt)
+            _ensure_v2_columns(conn)
+            conn.execute("COMMIT")
+            from app.infrastructure.database.connection import verify_schema
+            verify_schema(conn)
+            print("迁移完成（仅加列/补表，未重建主表），自检通过。")
+            return 0
+
         # SQLite 里重建被外键引用的表，必须先关外键，且只能在事务外切换
         conn.execute("PRAGMA foreign_keys = OFF")
         conn.isolation_level = None
@@ -169,7 +205,10 @@ def migrate(db_path: Path, dry_run: bool = False) -> int:
                 print(f"  建表 {name}")
             conn.execute(stmt)
 
-        # 2) 先把旧温度数据取出来（主表重建后这两列就没了）
+        # 2) v2 加列（ALTER，不需要重建）
+        _ensure_v2_columns(conn)
+
+        # 3) 先把旧温度数据取出来（主表重建后这两列就没了）
         temp_rows = []
         if "spheroidization_temperature" in old_cols:
             temp_rows = [

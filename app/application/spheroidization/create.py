@@ -46,6 +46,7 @@ class CreateSpheroidizationUseCase:
         spheroidization_abnormal: int | None = None,
         abnormal_type: int | None = None,
         abnormal_reason: str | None = None,
+        plc_button_time: str | None = None,
         spheroidization_image: bytes | None = None,
     ) -> SpheroidizationRecord:
         """
@@ -84,6 +85,7 @@ class CreateSpheroidizationUseCase:
             # 这里一推导，将来两边口径不一致就查不清是谁改的。
             abnormal_type=abnormal_type,
             abnormal_reason=abnormal_reason,
+            plc_button_time=plc_button_time,
             spheroidization_image=spheroidization_image,
             # 标准快照：创建这一刻的标准球化时间
             standard_spheroidization_time=(

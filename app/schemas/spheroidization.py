@@ -41,6 +41,9 @@ class SpheroidizationCreateRequest(BaseModel):
     # 0 必须收：vpmin 正常炉给的是 0，不是 null（10-31 联动实验实测撞到）
     abnormal_type: int | None = Field(default=None, ge=0, le=6)
     abnormal_reason: str | None = None
+    # 按钮上升沿原始时刻（没有按钮就不传）。detection_time 用它做锚点，
+    # 这里单独留一份，避免以后想恢复"亮光起点"口径时已无据可查。
+    plc_button_time: str | None = None
 
     # 补录专用的温度入参：机器正常流程走 POST /api/temperature，
     # 只有人工补录才随记录一起带温度。gun_no 默认 0 = 人工录入。
@@ -167,6 +170,7 @@ def to_response(
         # 异常分类和说明原样透传，不做任何映射
         "abnormal_type": record.abnormal_type,
         "abnormal_reason": record.abnormal_reason,
+        "plc_button_time": record.plc_button_time,
         "spheroidization_wire_entry_start_time": (
             record.spheroidization_wire_entry_start_time
         ),

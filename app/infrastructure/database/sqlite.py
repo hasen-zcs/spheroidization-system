@@ -110,6 +110,7 @@ class SqliteSpheroidizationRepository(SpheroidizationRepository):
                     spheroidization_abnormal,
                     abnormal_type, 
                     abnormal_reason,
+                    plc_button_time,
                     processed, processed_at, 
                     processed_by,
                     spheroidization_wire_entry_start_time,
@@ -118,7 +119,7 @@ class SqliteSpheroidizationRepository(SpheroidizationRepository):
                     spheroidization_weight, 
                     spheroidization_image
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                          ?, ?, ?, ?, ?, ?, ?)
+                          ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record.standard_record_id,
@@ -130,6 +131,7 @@ class SqliteSpheroidizationRepository(SpheroidizationRepository):
                     record.spheroidization_abnormal,
                     record.abnormal_type,
                     record.abnormal_reason,
+                    record.plc_button_time,
                     record.processed,
                     record.processed_at,
                     record.processed_by,

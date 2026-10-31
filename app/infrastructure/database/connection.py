@@ -5,12 +5,24 @@
 "每个人都记得加"这种约定靠不住，做成唯一入口才靠得住。
 """
 
+import os
 import sqlite3
 from pathlib import Path
 
 # connection.py 在 app/infrastructure/database/ 下，往上数三层是项目根目录
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_DB_PATH = PROJECT_ROOT / "data" / "spheroidization.db"
+def default_db_path() -> Path:
+    """允许用环境变量指定库文件：测试隔离、多实例部署、现场换盘都用得上。
+
+    每次调用都读环境变量，而不是在 import 时算成常量——
+    测试里 monkeypatch.setenv 之后再建容器才能生效。
+    """
+    return Path(
+        os.getenv("SPHEROIDIZATION_DB", str(PROJECT_ROOT / "data" / "spheroidization.db"))
+    )
+
+
+DEFAULT_DB_PATH = default_db_path()
 SCHEMA_FILE = Path(__file__).parent / "schema.sql"
 
 SEQUENCE_TRIGGER_SQL = (
@@ -59,7 +71,7 @@ def connect(db_path: str | Path | None = None) -> sqlite3.Connection:
     :param db_path: 数据库文件路径。不传就用 data/spheroidization.db
     :return: 配好的 sqlite3.Connection
     """
-    path = Path(db_path) if db_path else DEFAULT_DB_PATH
+    path = Path(db_path) if db_path else default_db_path()
     # data/ 目录可能还不存在，第一次跑的时候要先建出来
     path.parent.mkdir(parents=True, exist_ok=True)
     # check_same_thread=False：
@@ -115,7 +127,7 @@ REQUIRED_TABLES = (
 # 升级过表结构的列：老库缺这些列时，任何写入都会 OperationalError，
 # 与其等第一个请求 500，不如启动时直接拒绝。
 REQUIRED_COLUMNS = {
-    "SpheroidizationRecord": ("abnormal_type", "abnormal_reason"),
+    "SpheroidizationRecord": ("abnormal_type", "abnormal_reason", "plc_button_time"),
 }
 
 

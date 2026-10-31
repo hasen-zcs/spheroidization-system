@@ -200,6 +200,13 @@ onMounted(() => {
           </div>
 
           <div class="info-item">
+            <span>按钮时刻</span>
+            <strong>
+              {{ display(record.plc_button_time) }}
+            </strong>
+          </div>
+
+          <div class="info-item">
             <span>测温时间</span>
             <strong>
               {{ display(record.temperature_time) }}

@@ -32,6 +32,16 @@ from app.infrastructure.state.active_standard import JsonStandardApplicationStat
 from app.infrastructure.database.connection import init_database
 
 
+@pytest.fixture(autouse=True)
+def _isolate_default_db(monkeypatch, tmp_path):
+    """任何测试都不能碰 data/spheroidization.db。
+
+    app 的 lifespan 会自建一个默认容器（哪怕随后被 dependency_overrides 换掉），
+    所以把默认库指到临时文件；否则测试会被本地库的旧结构拖死。
+    """
+    monkeypatch.setenv("SPHEROIDIZATION_DB", str(tmp_path / "app-default.db"))
+
+
 def create_standard(container, spheroidization_time, created_by, **overrides):
     """建一条标准。默认称重标准 1500.0，其余走关键字覆盖。"""
     params = {

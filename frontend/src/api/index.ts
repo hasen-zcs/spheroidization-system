@@ -21,6 +21,8 @@ export interface SpheroidizationRecord {
   // 2026-10 新增字段
   abnormal_type: number | null
   abnormal_reason: string | null
+  /** 按钮上升沿原始时刻；为空表示这炉没有按钮数据（锚点回退到亮光起点） */
+  plc_button_time: string | null
   temperature: number | null
   temperature_time: string | null
   spheroidization_wire_entry_start_time: string

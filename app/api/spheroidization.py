@@ -130,6 +130,7 @@ def create_spheroidization(
         # 异常分类和说明原样透传，后端不判
         abnormal_type=data.abnormal_type,
         abnormal_reason=data.abnormal_reason,
+        plc_button_time=data.plc_button_time,
         spheroidization_image=data.spheroidization_image,
     )
     # 人工补录时随记录带的温度：机器流程一律走 POST /api/temperature，

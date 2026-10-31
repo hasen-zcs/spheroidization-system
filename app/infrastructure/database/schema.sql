@@ -23,7 +23,9 @@ CREATE TABLE SpheroidizationRecord (
 	standard_spheroidization_time REAL NOT NULL,-- 快照：生成记录那一刻的标准球化时间，算法、报表使用此字段
 	spheroidization_abnormal INTEGER CHECK (spheroidization_abnormal IN (0, 1)),-- 机器判定球化反应是否异常，0正常,1异常
 	abnormal_type INTEGER CHECK (abnormal_type IN (0, 1, 2, 3, 4, 5, 6)),-- 异常分类，1进站未球化,2球化线滑动/进线提前中止,3超过标准,4低于标准
-	abnormal_reason TEXT,-- 异常的文字说明，由上游检测设备给出，原样入库不做二次判断
+	abnormal_reason TEXT,
+	plc_button_time TEXT,-- 按钮上升沿原始时刻（没有按钮时为空）
+-- 异常的文字说明，由上游检测设备给出，原样入库不做二次判断
 	processed INTEGER NOT NULL DEFAULT 0 CHECK (processed IN (0, 1)),-- 人工是否处理(默认为0未处理，已处理为1）
 	processed_at TEXT,-- 人工处理时间
 	processed_by TEXT,-- 处理人

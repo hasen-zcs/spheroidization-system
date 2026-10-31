@@ -38,6 +38,9 @@ class SpheroidizationRecord:
     abnormal_type: int | None = None
     # 异常的文字说明，同样原样存
     abnormal_reason: str | None = None
+    # 按钮（浇注工位确认）上升沿的原始时刻。detection_time 可能等于它，
+    # 但保留原始值才能分辨"锚点来自按钮还是亮光回退"，审计用。
+    plc_button_time: str | None = None
     # 检测图片的二进制内容。表上允许为 NULL——上游首帧可能没有图，
     # 这里不补空值，没有就是 None。
     spheroidization_image: bytes | None = None
