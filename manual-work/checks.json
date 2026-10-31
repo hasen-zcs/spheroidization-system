@@ -1,0 +1,147 @@
+{
+  "format": "docx",
+  "verdict": "pass",
+  "checks": [
+    {
+      "id": "package",
+      "status": "pass"
+    },
+    {
+      "id": "contains",
+      "status": "pass",
+      "text": "\u6d47\u6ce8\u5de5\u4f4d\u76d1\u63a7"
+    },
+    {
+      "id": "contains",
+      "status": "pass",
+      "text": "\u4eba\u5de5\u590d\u6838"
+    },
+    {
+      "id": "contains",
+      "status": "pass",
+      "text": "\u6807\u8bb0\u4e3a\u5df2\u5904\u7406"
+    },
+    {
+      "id": "contains",
+      "status": "pass",
+      "text": "\u68c0\u6d4b\u6807\u51c6"
+    },
+    {
+      "id": "contains",
+      "status": "pass",
+      "text": "\u7403\u5316\u4eae\u5149\u5206\u6790\u66f2\u7ebf"
+    },
+    {
+      "id": "contains",
+      "status": "pass",
+      "text": "\u5e38\u89c1\u95ee\u9898"
+    },
+    {
+      "id": "contains",
+      "status": "pass",
+      "text": "\u540d\u8bcd\u89e3\u91ca"
+    }
+  ],
+  "summary": {
+    "paragraphs": 381,
+    "tables": [
+      {
+        "rows": 3,
+        "columns": 2
+      },
+      {
+        "rows": 1,
+        "columns": 1
+      },
+      {
+        "rows": 5,
+        "columns": 3
+      },
+      {
+        "rows": 5,
+        "columns": 3
+      },
+      {
+        "rows": 1,
+        "columns": 1
+      },
+      {
+        "rows": 10,
+        "columns": 2
+      },
+      {
+        "rows": 6,
+        "columns": 2
+      },
+      {
+        "rows": 5,
+        "columns": 2
+      },
+      {
+        "rows": 12,
+        "columns": 2
+      },
+      {
+        "rows": 10,
+        "columns": 2
+      },
+      {
+        "rows": 1,
+        "columns": 1
+      },
+      {
+        "rows": 1,
+        "columns": 1
+      },
+      {
+        "rows": 7,
+        "columns": 2
+      },
+      {
+        "rows": 5,
+        "columns": 2
+      },
+      {
+        "rows": 1,
+        "columns": 1
+      },
+      {
+        "rows": 1,
+        "columns": 1
+      },
+      {
+        "rows": 6,
+        "columns": 2
+      },
+      {
+        "rows": 1,
+        "columns": 1
+      },
+      {
+        "rows": 1,
+        "columns": 1
+      },
+      {
+        "rows": 11,
+        "columns": 2
+      }
+    ],
+    "sections": [
+      {
+        "page_twips": {
+          "w": "11906",
+          "h": "16838"
+        },
+        "margins_twips": {
+          "top": "1134",
+          "right": "1247",
+          "bottom": "1134",
+          "left": "1247",
+          "header": "720",
+          "footer": "720",
+          "gutter": "0"
+        }
+      }
+    ]
+  }
+}

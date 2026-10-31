@@ -1,0 +1,78 @@
+{
+  "format": "docx",
+  "verdict": "pass",
+  "checks": [
+    {
+      "id": "package",
+      "status": "pass"
+    },
+    {
+      "id": "contains",
+      "status": "pass",
+      "text": "AI\u7403\u5316\u68c0\u6d4b\u7cfb\u7edf"
+    },
+    {
+      "id": "contains",
+      "status": "pass",
+      "text": "\u975e\u5fc5\u8981\u4e0d\u8981\u65b0\u589e"
+    }
+  ],
+  "summary": {
+    "paragraphs": 162,
+    "tables": [
+      {
+        "rows": 4,
+        "columns": 2
+      },
+      {
+        "rows": 1,
+        "columns": 1
+      },
+      {
+        "rows": 6,
+        "columns": 2
+      },
+      {
+        "rows": 1,
+        "columns": 1
+      },
+      {
+        "rows": 1,
+        "columns": 1
+      },
+      {
+        "rows": 10,
+        "columns": 3
+      },
+      {
+        "rows": 1,
+        "columns": 1
+      },
+      {
+        "rows": 10,
+        "columns": 2
+      },
+      {
+        "rows": 4,
+        "columns": 2
+      }
+    ],
+    "sections": [
+      {
+        "page_twips": {
+          "w": "11906",
+          "h": "16838"
+        },
+        "margins_twips": {
+          "top": "1134",
+          "right": "1247",
+          "bottom": "1134",
+          "left": "1247",
+          "header": "720",
+          "footer": "720",
+          "gutter": "0"
+        }
+      }
+    ]
+  }
+}
