@@ -1,0 +1,5 @@
+FastAPI
+Pydantic
+Pytest
+Uvicorn
+bcrypt>=4.0
