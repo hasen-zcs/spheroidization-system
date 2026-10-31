@@ -36,9 +36,10 @@ class SpheroidizationCreateRequest(BaseModel):
     # 异常分类 1~4，由上游检测程序判定，这里只收不判。
     # ge/le 在模型层就挡掉非法值，比让数据库 CHECK 报错友好得多——
     # 数据库报的是 "CHECK constraint failed"，前端没法直接展示。
-    # 1 进站未球化 / 2 进线中断 / 3 超标准 / 4 低于标准 /
+    # 0 正常 / 1 进站未球化 / 2 进线中断 / 3 超标准 / 4 低于标准 /
     # 5 分段多次球化 / 6 未判定（vpmin 现有口径，2026-10-29 定）
-    abnormal_type: int | None = Field(default=None, ge=1, le=6)
+    # 0 必须收：vpmin 正常炉给的是 0，不是 null（10-31 联动实验实测撞到）
+    abnormal_type: int | None = Field(default=None, ge=0, le=6)
     abnormal_reason: str | None = None
 
     # 补录专用的温度入参：机器正常流程走 POST /api/temperature，

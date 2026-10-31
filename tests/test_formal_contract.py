@@ -208,3 +208,41 @@ def test_老库缺表时启动自检直接报错(env):
         verify_schema(conn)
     assert "migrate_db.py" in str(excinfo.value)
     conn.close()
+
+
+def test_正常记录的类型是0不是空(env):
+    """vpmin 正常炉给 abnormal_type=0，后端必须收（10-31 联动实验撞到 422）。"""
+    client, _ = env
+    _body, headers = _login(client)
+    client.post("/api/standards", json=_standard_payload(), headers=headers)
+
+    body = client.post(
+        "/api/spheroidization",
+        json=_record_payload(abnormal_type=0, spheroidization_abnormal=False),
+    ).json()
+    assert body["code"] == 200, body
+    assert body["data"]["abnormal_type"] == 0
+    assert body["data"]["spheroidization_abnormal"] is False
+
+
+def test_未判定记录不冒充正常也不计入异常(env):
+    """类型 6 = 未判定：abnormal 允许 NULL，统计里不算异常。"""
+    client, _ = env
+    _body, headers = _login(client)
+    client.post("/api/standards", json=_standard_payload(), headers=headers)
+
+    body = client.post(
+        "/api/spheroidization",
+        json=_record_payload(
+            abnormal_type=6,
+            spheroidization_abnormal=None,
+            abnormal_reason="未判定：缺少亮光时长或标准区间",
+        ),
+    ).json()
+    assert body["code"] == 200, body
+    assert body["data"]["abnormal_type"] == 6
+    assert body["data"]["spheroidization_abnormal"] is None
+
+    stats = client.get("/api/spheroidization/stats").json()["data"]
+    assert stats["total"] == 1
+    assert stats["abnormal"] == 0

@@ -71,6 +71,21 @@ cd .. && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
 - 切换日志返回分页对象 `{items,page,page_size}`，item 同时带原生字段与契约字段 + `summary`；
 - 人工补录可随记录带 `temperature` / `temperature_time`（写入温度表，`gun_no=0` 表示人工）。
 
+## 检测模块联动
+
+`scripts/link_vpmin.py` 把 vpmin 的 `reactions.jsonl` 翻译成管理端请求：
+
+```bash
+python scripts/link_vpmin.py --file output/reactions.jsonl \
+    --base-url http://127.0.0.1:8000 --dry-run   # 先看映射
+python scripts/link_vpmin.py --file output/reactions.jsonl --base-url http://127.0.0.1:8000
+```
+
+- 时长 `00:01:30.57` → 90.57 秒；`成功/失败/未判定` → `false/true/null`
+- 图片 `data:image/jpeg;base64,` 前缀会被去掉
+- 温度随记录一起提交（`gun_no` 默认 4），落 `TemperatureRecord`
+- **PLC 四个字段（进线起止/时长/重量）必填**：单机位检测必须配合并层才能建档
+
 ## 测试
 
 ```bash

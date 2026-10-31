@@ -4,6 +4,8 @@
 
 // 异常类型中文字典
 export const ABNORMAL_TYPE_LABELS: Record<number, string> = {
+  // vpmin 正常判定给的就是 0，不是 null；null 才代表"没判"
+  0: "正常",
   1: "进站未球化",
   2: "进线中断",
   3: "超标准",
