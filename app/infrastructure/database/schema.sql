@@ -135,6 +135,26 @@ CREATE TABLE FlashSegment (
 CREATE INDEX IF NOT EXISTS idx_uploadledger_record ON UploadLedger(record_id);
 CREATE INDEX IF NOT EXISTS idx_flashsegment_record ON FlashSegment(spheroidization_record_id);
 
+-- ==========================================================
+-- v4（2026-11-01）：审计日志
+-- 所有写操作留痕：谁（actor）在什么时间（created_at）对什么对象
+-- 做了什么（action）。只增不改不删，老库由 scripts/migrate_db.py 补建。
+-- 注意：detail 里不允许出现密码/令牌明文。
+-- ==========================================================
+CREATE TABLE AuditLog (
+	audit_id INTEGER PRIMARY KEY AUTOINCREMENT, -- 主键，id自增
+	actor TEXT NOT NULL, -- 谁（登录账号）
+	action TEXT NOT NULL, -- 动作码：create_standard/switch_standard/process_record/review_record/create_user/change_password/grant_permission
+	target_type TEXT NOT NULL, -- 对象类型：standard/spheroidization_record/review/user
+	target_id TEXT, -- 对象 ID（可空）
+	detail TEXT, -- JSON 摘要（改前/改后关键字段），禁止存密码明文
+	ip TEXT, -- 来源 IP（可为空）
+	created_at TEXT NOT NULL -- 发生时间，格式 "YYYY-MM-DD HH:MM:SS"
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS idx_auditlog_created ON AuditLog(created_at);
+CREATE INDEX IF NOT EXISTS idx_auditlog_actor ON AuditLog(actor, created_at);
+
 -- 删除后把 AUTOINCREMENT 序列回退到当前最大 ID。
 -- 删除中间行时序列不变；删除最后一行时下一条会复用被删除的 ID。
 CREATE TRIGGER IF NOT EXISTS standard_sync_sequence

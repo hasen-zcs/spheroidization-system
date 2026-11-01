@@ -468,3 +468,128 @@ export async function setUserEnabled(
     jsonOptions("PUT", { enabled })
   )
 }
+
+
+// ====================
+// 报表（summary 统计 + CSV 导出）
+// ====================
+
+export interface ReportDurationStats {
+  // 无样本时为 null（不是 0，0 秒是假数据）
+  avg: number | null
+  median: number | null
+  min: number | null
+  max: number | null
+}
+
+export interface ReportDayRow {
+  date: string
+  total: number
+  abnormal: number
+}
+
+export interface ReportSummary {
+  total: number
+  // abnormal_type 0..6 各自的数量（NULL 口径归入 0）
+  by_type: Record<number, number>
+  // 类型 ≠ 0 的记录数（未判定 type=6 也算在内）
+  abnormal_count: number
+  // 0-1，保留 4 位
+  abnormal_rate: number
+  unjudged_count: number
+  duration: ReportDurationStats
+  temperature: {
+    covered: number
+    total: number
+    coverage_rate: number
+    by_gun: Record<string, { count: number; avg: number | null }>
+  }
+  by_day: ReportDayRow[]
+}
+
+export interface ReportRangeQuery {
+  start?: string | null
+  end?: string | null
+  type?: number | null
+}
+
+export async function getReportSummary(
+  start: string | null,
+  end: string | null
+): Promise<ApiResponse<ReportSummary>> {
+  const search = new URLSearchParams()
+  if (start) {
+    search.set("start", start)
+  }
+  if (end) {
+    search.set("end", end)
+  }
+  return request(`/api/reports/summary?${search.toString()}`)
+}
+
+/** 导出 CSV 的地址（带当前筛选条件） */
+export function reportExportUrl(query: ReportRangeQuery = {}) {
+  const search = new URLSearchParams()
+  if (query.start) {
+    search.set("start", query.start)
+  }
+  if (query.end) {
+    search.set("end", query.end)
+  }
+  if (query.type !== null && query.type !== undefined) {
+    search.set("type", String(query.type))
+  }
+  const suffix = search.toString()
+  return `${apiUrl("/api/reports/export")}${suffix ? `?${suffix}` : ""}`
+}
+
+/**
+ * 下载导出 CSV：fetch 带 Bearer token（直接 <a> 跳转带不了 Authorization），
+ * 拿到 blob 后触发浏览器下载。后端 401/403 时走统一 JSON 信封（HTTP 200），
+ * 此时解析出 message 抛错，并照旧触发 auth:expired / api:forbidden 事件。
+ */
+export async function downloadReportCsv(
+  query: ReportRangeQuery = {}
+): Promise<void> {
+  const headers = new Headers()
+  const token = auth.value?.token
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`)
+  }
+
+  const response = await fetch(reportExportUrl(query), { headers })
+
+  const contentType = response.headers.get("content-type") ?? ""
+  if (!response.ok || contentType.includes("application/json")) {
+    let message = `导出失败（HTTP ${response.status}）`
+    try {
+      const body = (await response.json()) as ApiResponse<null>
+      if (body.message) {
+        message = body.message
+      }
+      if (body.code === 401) {
+        clearSession()
+        window.dispatchEvent(new Event("auth:expired"))
+      } else if (body.code === 403) {
+        window.dispatchEvent(
+          new CustomEvent("api:forbidden", { detail: body.message })
+        )
+      }
+    } catch {
+      // 非 JSON 响应体，保留默认错误文案
+    }
+    throw new Error(message)
+  }
+
+  const blob = await response.blob()
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement("a")
+  anchor.href = url
+  const disposition = response.headers.get("content-disposition") ?? ""
+  const match = disposition.match(/filename="?([^";]+)"?/)
+  anchor.download = match ? match[1] : "spheroidization_export.csv"
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  URL.revokeObjectURL(url)
+}

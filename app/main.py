@@ -11,10 +11,12 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api import spheroidization
 from app.api import review
+from app.api import reports
 from app.api import standard
 from app.api import temperature
 from app.api import user
 from app.api import video
+from app.api import audit
 from app.core.exceptions import BusinessException
 from app.dependencies import get_container
 
@@ -52,10 +54,12 @@ app.add_middleware(
 
 app.include_router(spheroidization.router)
 app.include_router(review.router)
+app.include_router(reports.router)
 app.include_router(standard.router)
 app.include_router(temperature.router)
 app.include_router(user.router)
 app.include_router(video.router)
+app.include_router(audit.router)
 
 
 @app.exception_handler(BusinessException)

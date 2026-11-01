@@ -44,6 +44,15 @@ class PasswordResetRequest(BaseModel):
     new_password: str
 
 
+class SelfPasswordChangeRequest(BaseModel):
+    """自查改密的入参。两个字段都要给：旧密码用来确认本人，新密码过策略。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    old_password: str
+    new_password: str
+
+
 class EnabledRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

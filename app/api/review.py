@@ -3,18 +3,21 @@
 只做四件事：收请求 → 转参数 → 调 UseCase → 包响应。
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from app.application.review.create import CreateReviewUseCase
 from app.application.review.query import QueryReviewUseCase
 from app.core import permissions as P
 from app.core.security import Session
 from app.dependencies import (
+    get_audit_logger,
     get_create_review_uc,
     get_query_review_uc,
     require_login,
     require_permission,
 )
+from app.domain.audit.entities import AuditAction, AuditTarget
+from app.domain.audit.service import AuditLogger, client_ip
 from app.schemas.common import ok
 from app.schemas.review import ReviewCreateRequest, to_response, to_result_int
 
@@ -27,8 +30,10 @@ router = APIRouter(
 @router.post("")
 def create_review(
     data: ReviewCreateRequest,
+    request: Request,
     session: Session = Depends(require_permission(P.ACTION_REVIEW)),
     uc: CreateReviewUseCase = Depends(get_create_review_uc),
+    audit: AuditLogger = Depends(get_audit_logger),
 ):
     # 复核人和处理人一样从登录态取，不能由前端随便填：
     # 人工判定是谁做的，事后要能追到人。
@@ -39,6 +44,19 @@ def create_review(
         review_result=to_result_int(data.review_result),
         reviewer=session.username,
         review_remark=data.review_remark,
+    )
+    # 审计留痕：人工判定结果必须可追溯
+    audit.record(
+        actor=session.username,
+        action=AuditAction.REVIEW_RECORD,
+        target_type=AuditTarget.REVIEW,
+        target_id=review.review_record_id,
+        detail={
+            "spheroidization_record_id": data.spheroidization_record_id,
+            "review_result": to_result_int(data.review_result),
+            "review_remark": data.review_remark,
+        },
+        ip=client_ip(request),
     )
     return ok(to_response(review), "复核成功")
 

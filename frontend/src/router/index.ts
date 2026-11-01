@@ -6,6 +6,7 @@ import Home from "../views/Home.vue"
 import Login from "../views/Login.vue"
 import Monitor from "../views/Monitor.vue"
 import Records from "../views/Records.vue"
+import Reports from "../views/Reports.vue"
 import Spheroidization from "../views/Spheroidization.vue"
 import SpheroidizationDetail from "../views/SpheroidizationDetail.vue"
 import Standard from "../views/Standard.vue"
@@ -65,6 +66,14 @@ const router = createRouter({
           },
         },
         {
+          path: "reports",
+          component: Reports,
+          meta: {
+            title: "报表",
+            permission: "page:records",
+          },
+        },
+        {
           path: "standard",
           component: Standard,
           meta: {
@@ -101,6 +110,10 @@ const router = createRouter({
     {
       path: "/spheroidization",
       redirect: "/records/spheroidization",
+    },
+    {
+      path: "/reports",
+      redirect: "/records/reports",
     },
     {
       // 详情页只要求登录，不挂页面权限

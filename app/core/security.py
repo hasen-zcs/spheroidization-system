@@ -103,10 +103,40 @@ def create_token(
     return token
 
 
+def validate_password_policy(password: str) -> list[str]:
+    """密码强度策略：长度 ≥8，且同时含字母和数字。
+
+    返回不满足项的列表（空列表 = 合格）。统一在这一处判，
+    自查改密和管理员重置走同一把尺子，避免两套策略漂移。
+    """
+    problems = []
+    if len(password) < 8:
+        problems.append("长度不足 8 位")
+    if not any(c.isalpha() for c in password):
+        problems.append("必须包含字母")
+    if not any(c.isdigit() for c in password):
+        problems.append("必须包含数字")
+    return problems
+
+
 def revoke_token(token: str) -> None:
     """注销令牌。令牌本来就不存在时什么也不做。"""
     with _SESSIONS_LOCK:
         _SESSIONS.pop(token, None)
+
+
+def revoke_all_tokens_for_user(user_id: int) -> int:
+    """按用户吊销全部已签发令牌（改密码后调用）。
+
+    内存会话表本来就是全量 token -> Session，按 user_id 扫一遍删掉即可，
+    包括当前这次请求正在用的那个 token——改密成功后它立刻作废，
+    下次再拿它请求就 401。返回被吊销的条数，方便排查。
+    """
+    with _SESSIONS_LOCK:
+        stale = [key for key, item in _SESSIONS.items() if item.user_id == user_id]
+        for key in stale:
+            del _SESSIONS[key]
+        return len(stale)
 
 
 def get_session(token: str) -> Session | None:

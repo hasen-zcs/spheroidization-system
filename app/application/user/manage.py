@@ -1,5 +1,5 @@
 from app.core.exceptions import BusinessException
-from app.core.security import hash_password
+from app.core.security import hash_password, validate_password_policy, verify_password
 from app.domain.user.entities import UserAccount
 from app.domain.user.repositories import UserAccountRepository
 
@@ -31,9 +31,43 @@ class UserAccountManageUseCase:
             raise BusinessException(f"用户不存在：user_id={user_id}", 404)
         return user
 
+    @staticmethod
+    def _ensure_password_policy(new_password: str) -> None:
+        """密码强度策略（长度 ≥8 + 字母 + 数字）。不满足报 422，写明缺什么。
+
+        自查改密和管理员重置都过这道闸：弱密码不再静默接受。
+        """
+        problems = validate_password_policy(new_password)
+        if problems:
+            raise BusinessException(
+                "新密码不符合策略：" + "、".join(problems), 422
+            )
+
+    def change_password(
+        self, user_id: int, old_password: str, new_password: str
+    ) -> None:
+        """自查改密：先验旧密码，再套新密码策略。
+
+        - 旧密码错误 → 400
+        - 新密码与旧密码相同 → 422
+        - 新密码不满足策略 → 422
+        """
+        user = self._ensure_user(user_id)
+        if not verify_password(old_password, user.password_hash):
+            raise BusinessException("旧密码不正确", 400)
+        if old_password == new_password:
+            raise BusinessException("新密码不能与旧密码相同", 422)
+        self._ensure_password_policy(new_password)
+        try:
+            password_hash = hash_password(new_password)
+        except ValueError as exc:
+            raise BusinessException(str(exc)) from exc
+        self.user_repo.update_password(user_id, password_hash)
+
     def reset_password(self, user_id: int, new_password: str) -> None:
         """重置密码。传进来的明文在这里哈希，之后就不存在了。"""
         self._ensure_user(user_id)
+        self._ensure_password_policy(new_password)
         try:
             password_hash = hash_password(new_password)
         except ValueError as exc:

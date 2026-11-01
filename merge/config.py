@@ -7,6 +7,7 @@
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Optional
 
 # 现场默认目录（vpmin 与 PLC 采集程序都在这个根下）
 DEFAULT_ROOT = Path(os.getenv("MERGE_ROOT", "/root/MR"))
@@ -56,6 +57,17 @@ class Config:
             DEFAULT_ROOT / "button_confirm" / "all_button_confirm_time.jsonl",
         )
     )
+    # heat 主源：一行一炉（反应次数 + 进丝起止 + PLC 锚点 + 判定字段，已融合）
+    heat_file: Path = field(
+        default_factory=lambda: _p(
+            "MERGE_HEAT_FILE",
+            DEFAULT_ROOT / "output/plc/heat_records.jsonl",
+        )
+    )
+    # 主数据源：heat（一行一炉，类型 1/2 也能入库）| reactions（亮光+PLC 配对老路径）
+    source: str = field(default_factory=lambda: os.getenv("MERGE_SOURCE", "heat"))
+    # 仅测试用：限制本轮处理的 heat 条数（None = 不限制）
+    limit: Optional[int] = None
 
     # ---- 状态与输出 ----
     state_db: Path = field(
@@ -74,6 +86,14 @@ class Config:
     )
     # 设备标识：幂等键的一半。同一台机器只能有一个值，改了等于换设备。
     device_id: str = field(default_factory=lambda: os.getenv("MERGE_DEVICE_ID", "casting-1"))
+
+    # ---- 按钮补偿（秒）----
+    # 按钮按下 → PLC 进线开始 的固定物理间隔。老板 11-01 授权按统计定值：
+    # 2026-11-01 00:34~18:14 共 90 炉实测 40.0~41.0s（中位 40.0，均值 40.3，90/90 全配对）→ 定 40s。
+    # 用途：按钮口径与进线口径互转（如从按钮起算时长 = 进线时长 + 40s）。
+    # 🔴 本参数不改变任何入库字段：detection_time=按钮原值、PLC 四字段原样搬、亮光起止原样，
+    #    只作为业务/统计换算依据，现场若发现漂移超 ±2s 再改 MERGE_BUTTON_OFFSET。
+    button_offset: float = field(default_factory=lambda: _f("MERGE_BUTTON_OFFSET", 40.0))
 
     # ---- 配对窗口（秒）----
     # 按钮 → 亮光起点：实测 13.6s，负向留 60s 是给"按钮比别人早按"留余量

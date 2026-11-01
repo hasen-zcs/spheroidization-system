@@ -126,6 +126,9 @@ REQUIRED_TABLES = (
     # 上游一上传就会 OperationalError，所以放进启动自检。
     "UploadLedger",
     "FlashSegment",
+    # v4（2026-11-01）：审计日志。老库缺这张表时写操作留痕全部失败，
+    # 而且启动自检要把它当成结构不完整处理。
+    "AuditLog",
 )
 
 # 升级过表结构的列：老库缺这些列时，任何写入都会 OperationalError，

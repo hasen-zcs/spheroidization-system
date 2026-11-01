@@ -3,7 +3,7 @@
 只做四件事：收请求 → 转参数 → 调 UseCase → 包响应。
 """
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 
 from app.application.standard.create import CreateStandardUseCase
 from app.application.standard.query import QueryStandardUseCase
@@ -11,12 +11,15 @@ from app.application.standard.switch import SwitchStandardUseCase
 from app.core import permissions as P
 from app.core.security import Session
 from app.dependencies import (
+    get_audit_logger,
     get_create_standard_uc,
     get_query_standard_uc,
     get_switch_standard_uc,
     require_login,
     require_permission,
 )
+from app.domain.audit.entities import AuditAction, AuditTarget
+from app.domain.audit.service import AuditLogger, client_ip
 from app.schemas.common import ok
 from app.schemas.standard import (
     StandardCreateRequest,
@@ -58,8 +61,10 @@ def _switch_summary(log, from_standard, to_standard) -> str:
 @router.post("")
 def create_standard(
     data: StandardCreateRequest,
+    request: Request,
     session: Session = Depends(require_permission(P.ACTION_CREATE_STANDARD)),
     uc: CreateStandardUseCase = Depends(get_create_standard_uc),
+    audit: AuditLogger = Depends(get_audit_logger),
 ):
     # 标准只增不改：创建一条新的，它立即成为当前有效标准，历史标准全部保留。
     # 创建人从登录态取，不读 data.created_by。
@@ -70,6 +75,19 @@ def create_standard(
         standard_spheroidization_time_upper=data.standard_spheroidization_time_upper,
         standard_spheroidization_time_lower=data.standard_spheroidization_time_lower,
         remark=data.remark,
+    )
+    # 审计留痕：业务已提交成功才写；写入失败只记日志，不影响响应
+    audit.record(
+        actor=session.username,
+        action=AuditAction.CREATE_STANDARD,
+        target_type=AuditTarget.STANDARD,
+        target_id=standard.standard_record_id,
+        detail={
+            "standard_spheroidization_time": standard.standard_spheroidization_time,
+            "weighing_standard": standard.weighing_standard,
+            "remark": standard.remark,
+        },
+        ip=client_ip(request),
     )
     return ok(to_response(standard), "标准创建成功")
 
@@ -101,14 +119,29 @@ def get_standard_history(
 @router.post("/switch")
 def switch_standard(
     data: StandardSwitchRequest,
+    request: Request,
     session: Session = Depends(require_permission(P.ACTION_SWITCH_STANDARD)),
     uc: SwitchStandardUseCase = Depends(get_switch_standard_uc),
+    audit: AuditLogger = Depends(get_audit_logger),
 ):
     # 切换会写日志，日志里的操作人只能是登录态里的人，不能由前端填。
     standard = uc.execute(
         to_standard_record_id=data.to_standard_record_id,
         reason=data.reason,
         operated_by=session.username,
+    )
+    # 审计留痕：SwitchStandardUseCase 已落 SwitchStandardLogs，
+    # 这里再进一条统一格式的审计，方便和别的写操作一起查。
+    audit.record(
+        actor=session.username,
+        action=AuditAction.SWITCH_STANDARD,
+        target_type=AuditTarget.STANDARD,
+        target_id=standard.standard_record_id,
+        detail={
+            "to_standard_record_id": data.to_standard_record_id,
+            "reason": data.reason,
+        },
+        ip=client_ip(request),
     )
     return ok(to_response(standard), "标准切换成功")
 

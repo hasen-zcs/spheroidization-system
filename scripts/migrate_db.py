@@ -34,13 +34,16 @@ import shutil
 import sqlite3
 import sys
 from datetime import datetime
+import os
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 SCHEMA_FILE = PROJECT_ROOT / "app" / "infrastructure" / "database" / "schema.sql"
-DEFAULT_DB = PROJECT_ROOT / "data" / "spheroidization.db"
+DEFAULT_DB = Path(
+    os.getenv("SPHEROIDIZATION_DB", str(PROJECT_ROOT / "data" / "spheroidization.db"))
+)
 BACKUP_DIR = PROJECT_ROOT / "data" / "backups"
 
 MAIN_TABLE = "SpheroidizationRecord"
@@ -138,6 +141,10 @@ def _ensure_v2_columns(conn) -> None:
 # 也缺这两张，必须补建，否则上游一上传就 no such table。
 V3_TABLES = ("UploadLedger", "FlashSegment")
 
+# v4（2026-11-01）：审计日志表。老库缺它时 verify_schema 直接拒绝启动，
+# 所以也算"没迁完"，走"只加表"分支补建。
+V4_TABLES = ("AuditLog",)
+
 
 def _is_migrated(conn) -> bool:
     tables = _tables(conn)
@@ -148,7 +155,8 @@ def _is_migrated(conn) -> bool:
     no_old_cols = not (set(OLD_ONLY_COLUMNS) & cols)
     # 缺 v3 表也算"没迁完"：主表不用重建，走"只加表"分支
     has_v3 = set(V3_TABLES) <= tables
-    return has_new_cols and no_old_cols and has_v3
+    has_v4 = set(V4_TABLES) <= tables
+    return has_new_cols and no_old_cols and has_v3 and has_v4
 
 
 def _backup(db_path: Path) -> Path:

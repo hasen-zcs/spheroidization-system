@@ -63,7 +63,10 @@ from app.application.user.permission import UserPermissionUseCase
 from app.application.user.query import QueryUserUseCase
 from app.core.exceptions import BusinessException
 from app.core.security import Session, get_session
+from app.domain.audit.repositories import AuditRepository
+from app.domain.audit.service import AuditLogger
 from app.domain.standard.application_state import StandardApplicationState
+from app.infrastructure.database.audit_repo import SqliteAuditRepository
 from app.infrastructure.database.connection import init_database
 from app.infrastructure.database.flash_repo import (
     SqliteFlashSegmentRepository,
@@ -114,6 +117,8 @@ class Container:
         # v3：幂等台账 + 分段明细（写方法不提交事务，由用例统一控制）
         self.upload_ledger_repo = SqliteUploadLedgerRepository(self.conn)
         self.flash_segment_repo = SqliteFlashSegmentRepository(self.conn)
+        # v4：审计日志（自提交事务，写入独立于业务事务）
+        self.audit_repo = SqliteAuditRepository(self.conn)
 
     # ---- UseCase：本身不存状态，每次现构造，成本可忽略 ----
 
@@ -187,6 +192,10 @@ class Container:
 
     def query_user(self) -> QueryUserUseCase:
         return QueryUserUseCase(self.user_repo, self.user_permission_repo)
+
+    def audit_logger(self) -> AuditLogger:
+        # 审计写入失败只记日志不回滚业务，策略在 AuditLogger 里
+        return AuditLogger(self.audit_repo)
 
 
 @lru_cache(maxsize=1)
@@ -306,6 +315,18 @@ def get_query_user_uc(
     container: Container = Depends(get_container),
 ) -> QueryUserUseCase:
     return container.query_user()
+
+
+def get_audit_repo(
+    container: Container = Depends(get_container),
+) -> AuditRepository:
+    return container.audit_repo
+
+
+def get_audit_logger(
+    container: Container = Depends(get_container),
+) -> AuditLogger:
+    return container.audit_logger()
 
 
 # ==========================================================

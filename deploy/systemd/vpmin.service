@@ -1,0 +1,24 @@
+# 球化检测服务（vpmin）
+# 模板：vpmin 是现场检测程序，可执行文件位置各现场不同，
+#       部署时必须按现场实际改 WorkingDirectory / ExecStart，再 systemctl enable。
+# 参数一律走 EnvironmentFile（不写命令行，避免 ps 泄漏配置）。
+
+[Unit]
+Description=Spheroidization detection service (vpmin)
+After=network.target
+
+[Service]
+Type=simple
+# TODO 现场填写：vpmin 实际工作目录
+WorkingDirectory=/root/MR/vpmin
+# TODO 现场填写：vpmin 自己的环境变量文件（相机/相机参数/阈值等）
+EnvironmentFile=-/etc/spheroidization/vpmin.env
+# TODO 现场填写：vpmin 实际可执行（或它的启动脚本）
+ExecStart=/root/MR/vpmin/start.sh
+Restart=always
+RestartSec=3
+StandardOutput=append:/var/log/spheroidization/vpmin.log
+StandardError=append:/var/log/spheroidization/vpmin.log
+
+[Install]
+WantedBy=multi-user.target

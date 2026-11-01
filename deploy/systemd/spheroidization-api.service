@@ -1,0 +1,24 @@
+# 球化监测系统 · API 服务（uvicorn）
+# 模板：部署时把 /opt/spheroidization 改成实际目录，再 systemctl enable。
+#
+# 🔴 必须 --workers 1：会话存在进程内存里，
+#    多 worker 会出现随机 401、重启即掉线（README 已写明）。
+
+[Unit]
+Description=Spheroidization Management API (uvicorn, workers=1)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/spheroidization
+# env 文件放所有环境变量（SPHEROIDIZATION_DB / MERGE_* / 端口等），
+# 由 deploy/env.example 复制而来。- 前缀 = 文件缺失不阻止启动（走代码默认值）
+EnvironmentFile=-/opt/spheroidization/env
+ExecStart=/opt/spheroidization/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
+Restart=always
+RestartSec=3
+StandardOutput=append:/var/log/spheroidization/api.log
+StandardError=append:/var/log/spheroidization/api.log
+
+[Install]
+WantedBy=multi-user.target

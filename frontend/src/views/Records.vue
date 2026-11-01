@@ -47,6 +47,14 @@ const recordsViewKey = computed(() => {
       </router-link>
 
       <router-link
+        v-if="can('page:records')"
+        class="menu-item"
+        to="/records/reports"
+      >
+        报表
+      </router-link>
+
+      <router-link
         v-if="can('page:standard')"
         class="menu-item"
         to="/records/standard"

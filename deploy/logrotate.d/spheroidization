@@ -1,0 +1,26 @@
+# 球化监测系统日志轮转（复制到 /etc/logrotate.d/spheroidization）
+# 覆盖：api（uvicorn stdout/err 由 systemd 落到 /var/log/spheroidization/）、
+#       merge 服务日志（$MERGE_LOG）、vpmin 检测服务日志。
+# 每日轮转，保留 14 天。文件不存在时静默跳过（missingok）。
+
+/var/log/spheroidization/*.log {
+    daily
+    rotate 14
+    missingok
+    notifempty
+    compress
+    delaycompress
+    create
+}
+
+# merge 的日志路径由 MERGE_LOG 决定（默认 /root/MR/merge_service.log，
+# 若现场改过 MERGE_LOG，把下面这行改成实际路径）
+/root/MR/merge_service.log {
+    daily
+    rotate 14
+    missingok
+    notifempty
+    compress
+    delaycompress
+    create
+}

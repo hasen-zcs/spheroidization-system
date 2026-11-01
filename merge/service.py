@@ -11,16 +11,26 @@
 任何一步失败都不影响下一轮：状态都在库里，进程重启从断点继续。
 """
 
+import hashlib
 import json
 import time
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
 
-from .assemble import AssembleError, body_json, build_payload, plc_skew
+from .assemble import (
+    AssembleError,
+    backfill_plc_from_all_plc,
+    body_json,
+    build_payload,
+    build_payload_from_heat,
+    plc_backfill_note,
+    plc_skew,
+)
 from .config import Config
-from .pair import pair_events, parse_time
+from .pair import Pair, pair_events, parse_time
 from .sources import button as button_src
+from .sources import heat as heat_src
 from .sources import plc as plc_src
 from .sources import temp as temp_src
 from .sources import vpmin as vpmin_src
@@ -30,6 +40,14 @@ from .upload import TransportError, Uploader
 
 def _log(message: str) -> None:
     print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {message}", flush=True)
+
+
+def _heat_file_usable(path: Path) -> bool:
+    """heat 主源文件是否可读。默认路径在 /root 下，无权限时按不存在处理。"""
+    try:
+        return path.exists()
+    except OSError:
+        return False
 
 
 class MergeService:
@@ -60,6 +78,7 @@ class MergeService:
             "existing": 0,
             "failed": 0,
             "dead": 0,
+            "heat": 0,
             "no_plc_streak": 0,
         }
         self._ingest(stats)
@@ -75,9 +94,9 @@ class MergeService:
         while True:
             try:
                 stats = self.run_once()
-                if stats["pairs"] or stats["uploaded"] or stats["dead"]:
+                if stats["pairs"] or stats["uploaded"] or stats["dead"] or stats["heat"]:
                     self.log(
-                        "一轮：配对 {pairs} 上传 {uploaded} 幂等 {existing} "
+                        "一轮：heat {heat} 配对 {pairs} 上传 {uploaded} 幂等 {existing} "
                         "失败 {failed} 死信 {dead}".format(**stats)
                     )
             except KeyboardInterrupt:
@@ -92,6 +111,16 @@ class MergeService:
 
     def _ingest(self, stats: dict) -> None:
         cfg = self.cfg
+
+        # heat 主源路径：一行一炉，不需要亮光/PLC 配对；类型 1/2 也能入库。
+        # heat 文件不存在（或所在目录不可访问）→ 回落 reactions 老路径，行为完全不变。
+        if cfg.source == "heat":
+            if _heat_file_usable(cfg.heat_file):
+                self._ingest_heat(stats)
+                return
+            self.log(
+                f"[WARN] heat 主源文件不存在：{cfg.heat_file} → 回落 reactions 老路径"
+            )
 
         events, inode, offset = button_src.read_new(
             cfg.button_file, self._cursor(cfg.button_file)
@@ -164,6 +193,87 @@ class MergeService:
     def _cursor(self, path: Path):
         row = self.state.get_cursor(path)
         return (row["inode"], row["offset"]) if row else None
+
+    # ---------------- 1b. heat 主源 ----------------
+
+    def _ingest_heat(self, stats: dict) -> None:
+        """heat 主源：追尾读 heat_records.jsonl，逐条组包入库。
+
+        顺序：先读温度（_match_temperature 依赖状态库温度表），再读 heat。
+        组包 + 入队 + 推游标在同一个事务里——先入队再推游标，
+        中间崩溃不丢数据；重复读靠 stable sha 去重（INSERT OR IGNORE）。
+        """
+        cfg = self.cfg
+
+        events, inode, offset = temp_src.read_new(
+            cfg.temp_all_file, cfg.temp_rolling_dir, self._cursor(cfg.temp_all_file)
+        )
+        with self.state:
+            for event in events:
+                if self.state.add_temp(
+                    event["fp"], event["gun_no"], event["value"], event["measured_at"]
+                ):
+                    stats["temps"] += 1
+            if inode:
+                self.state.set_cursor(cfg.temp_all_file, inode, offset)
+
+        heat_events, inode, offset = heat_src.read_new(
+            cfg.heat_file, self._cursor(cfg.heat_file)
+        )
+        processed = 0
+        with self.state:
+            for event in heat_events:
+                if event["kind"] == "bad":
+                    self.state.dead_letter(
+                        sha=f"bad-heat-{event['raw'][:32]}",
+                        source="heat",
+                        external_id=None,
+                        raw=event["raw"][:2000],
+                        error="heat jsonl 行解析失败",
+                    )
+                    continue
+                # limit 只限处理条数，游标照常推完，不重复处理
+                if cfg.limit is not None and processed >= cfg.limit:
+                    continue
+                rec = event["record"]
+                # T-004e 回捞：进线结束/时长 null → 按进线开始时间从 all_plc.jsonl 补齐；
+                # heat 已有字段不被覆盖；回捞不到维持现状（422 死信会写明原因）
+                if backfill_plc_from_all_plc(rec, cfg.plc_all_file) is not None:
+                    self.log(
+                        f"[PLC回捞] reaction_count={rec.get('reaction_count')} "
+                        "进线结束/时长已从 all_plc 补齐"
+                    )
+                anchor = (
+                    rec.get("plc_button_time")
+                    or rec.get("spheroidization_start_time")
+                    or rec.get("detection_time")
+                )
+                pair = Pair(
+                    light={"record": rec},
+                    plc={"record": rec},
+                    anchor=anchor,
+                    anchor_kind="button" if rec.get("plc_anchor") == "button" else "light",
+                )
+                temperature = self._match_temperature(pair)
+                payload = build_payload_from_heat(rec, temperature, cfg.device_id)
+                body = body_json(payload)
+                if cfg.dry_run:
+                    self._write_dry_run(payload, pair)
+                elif self.state.is_delivered(cfg.device_id, payload["external_id"]):
+                    stats["existing"] += 1
+                else:
+                    self.state.enqueue_upload(
+                        sha=hashlib.sha256(
+                            payload["external_id"].encode("utf-8")
+                        ).hexdigest()[:16],
+                        device_id=cfg.device_id,
+                        external_id=payload["external_id"],
+                        body=body,
+                    )
+                stats["heat"] += 1
+                processed += 1
+            if inode:
+                self.state.set_cursor(cfg.heat_file, inode, offset)
 
     # ---------------- 2. 配对组包 ----------------
 
@@ -301,9 +411,12 @@ class MergeService:
                     f"{'（幂等命中）' if existing else ''}"
                 )
             elif code in (409, 422) or (isinstance(code, int) and 400 <= code < 500):
+                error = f"HTTP {status} code={code} {body.get('message', '')}"
+                note = plc_backfill_note(row["body"])
+                if note:
+                    error += f"｜{note}"
                 self.state.dead_letter(
-                    sha, "upload", row["external_id"], row["body"][:4000],
-                    f"HTTP {status} code={code} {body.get('message', '')}",
+                    sha, "upload", row["external_id"], row["body"][:4000], error,
                 )
                 stats["dead"] += 1
                 self.log(

@@ -21,12 +21,20 @@ def main(argv=None) -> int:
     parser.add_argument("--once", action="store_true", help="只跑一轮")
     parser.add_argument("--replay-dead-letter", action="store_true",
                         help="把死信重新入队（人工改完数据后用）")
+    parser.add_argument("--source", choices=["heat", "reactions"], default=None,
+                        help="主数据源：heat 一行一炉 / reactions 老配对路径（覆盖 MERGE_SOURCE）")
+    parser.add_argument("--limit", type=int, default=None,
+                        help="仅测试用：限制本轮处理的 heat 条数")
     parser.add_argument("--backend", default=None, help="覆盖后端地址")
     parser.add_argument("--device-id", default=None, help="覆盖设备标识")
     args = parser.parse_args(argv)
 
     cfg = Config()
     cfg.dry_run = args.dry_run
+    if args.source:
+        cfg.source = args.source
+    if args.limit is not None:
+        cfg.limit = args.limit
     if args.backend:
         cfg.backend_url = args.backend
     if args.device_id:

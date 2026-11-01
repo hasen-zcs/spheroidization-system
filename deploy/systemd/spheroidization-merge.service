@@ -1,0 +1,23 @@
+# 球化监测系统 · 合并层服务（python -m merge）
+# 模板：部署时把 /opt/spheroidization 改成实际目录，再 systemctl enable。
+# 依赖 api：api 起不来时合并层也起不来（上传会 5xx，靠内置重试 + 死信兜底，
+# 但没意义，所以 After + Wants 先拉起 api）。
+# 数据源路径 / 阈值全部走 EnvironmentFile（MERGE_* 环境变量），不写命令行。
+
+[Unit]
+Description=Spheroidization merge service (python -m merge)
+After=network.target spheroidization-api.service
+Wants=spheroidization-api.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/spheroidization
+EnvironmentFile=-/opt/spheroidization/env
+ExecStart=/opt/spheroidization/.venv/bin/python -m merge
+Restart=always
+RestartSec=3
+StandardOutput=append:/var/log/spheroidization/merge.log
+StandardError=append:/var/log/spheroidization/merge.log
+
+[Install]
+WantedBy=multi-user.target

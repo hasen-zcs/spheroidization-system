@@ -6,9 +6,9 @@
   只能全量读 + 指纹去重。设计里写"offset 追尾"就是重演 10-10 的丢数事故。
 
 字段名现场不止一套（bridge 的写法、老脚本的写法），所以这里做宽容解析：
-枪号认 gun_no / gun / gun_name / temperature_gun / "枪4" 这类，
-时间认 measured_at / temperature_time / measured_time / time，
-数值认 temperature / value / temp。解析不出来就跳过，不猜。
+枪号认 gun_no / gun / gun_name / temperature_gun / device_name / "枪4" 这类，
+时间认 measured_at / spheroidization_temperature_time / temperature_time / measured_time / time，
+数值认 temperature / spheroidization_temperature / value / temp。解析不出来就跳过，不猜。
 """
 
 import json
@@ -17,11 +17,27 @@ from pathlib import Path
 
 from .base import file_exists, fingerprint, read_all_lines, tail_lines
 
-GUN_KEYS = ("gun_no", "gun", "gun_name", "temperature_gun", "gun_id")
-TIME_KEYS = ("measured_at", "temperature_time", "measured_time", "time")
-VALUE_KEYS = ("temperature", "value", "temp")
+GUN_KEYS = ("gun_no", "gun", "gun_name", "temperature_gun", "gun_id",
+            "device_name")
+TIME_KEYS = ("measured_at", "spheroidization_temperature_time",
+             "temperature_time", "measured_time", "time")
+VALUE_KEYS = ("temperature", "spheroidization_temperature", "value", "temp")
 
 _GUN_RE = re.compile(r"(\d+)")
+# device_name 会带日期前缀（如 "2026-11-01 测温枪4"），先剥掉日期再取枪号，
+# 否则会命中 2026
+_DATE_RE = re.compile(r"\d{4}-\d{1,2}-\d{1,2}")
+_GUN_WORD_RE = re.compile(r"枪\s*(\d+)")
+_TAIL_NUM_RE = re.compile(r"(\d+)\s*$")
+
+
+def _gun_from_device_name(text: str) -> int | None:
+    """从 device_name 取枪号：剥日期 → 优先「枪N」→ 末尾数字。取不到返回 None。"""
+    text = _DATE_RE.sub("", text)
+    match = _GUN_WORD_RE.search(text)
+    if not match:
+        match = _TAIL_NUM_RE.search(text)
+    return int(match.group(1)) if match else None
 
 
 def parse_gun(obj: dict, from_filename: int | None = None) -> int | None:
@@ -30,6 +46,11 @@ def parse_gun(obj: dict, from_filename: int | None = None) -> int | None:
             value = obj[key]
             if isinstance(value, (int, float)):
                 return int(value)
+            if key == "device_name":
+                gun = _gun_from_device_name(str(value))
+                if gun is not None:
+                    return gun
+                continue
             match = _GUN_RE.search(str(value))
             if match:
                 return int(match.group(1))
