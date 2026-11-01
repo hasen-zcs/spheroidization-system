@@ -231,6 +231,16 @@ class CreateSpheroidizationUseCase:
         if current_standard is None:
             raise BusinessException("不存在生效检测标准，无法创建球化检测记录")
 
+        # 未判定（类型 6）一律归异常，原因统一写"未判定"（2026-11-01 老板定）。
+        # 放在这里而不是只放在合并层：人工补录、旧上传器也走这条路，
+        # 归一化写在入口才能保证库里没有第二种口径。
+        abnormal_type = fields["abnormal_type"]
+        abnormal_flag = fields["spheroidization_abnormal"]
+        abnormal_reason = fields["abnormal_reason"]
+        if abnormal_type is not None and int(abnormal_type) == 6:
+            abnormal_flag = 1
+            abnormal_reason = "未判定"
+
         return SpheroidizationRecord(
             # 溯源：这条记录用了当前这套标准。仅作标识，
             # 业务运算用的是下面的快照值，不是实时去查标准表。
@@ -250,11 +260,11 @@ class CreateSpheroidizationUseCase:
                 "spheroidization_wire_entry_total_duration"
             ],
             spheroidization_weight=fields["spheroidization_weight"],
-            spheroidization_abnormal=fields["spheroidization_abnormal"],
+            spheroidization_abnormal=abnormal_flag,
             # 异常分类和说明原样存：判定是上游的事，后端只记录。
             # 这里一推导，将来两边口径不一致就查不清是谁改的。
-            abnormal_type=fields["abnormal_type"],
-            abnormal_reason=fields["abnormal_reason"],
+            abnormal_type=abnormal_type,
+            abnormal_reason=abnormal_reason,
             plc_button_time=fields["plc_button_time"],
             spheroidization_image=fields["spheroidization_image"],
             # 标准快照：创建这一刻的标准球化时间

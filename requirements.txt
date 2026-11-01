@@ -1,5 +1,10 @@
-FastAPI
-Pydantic
-Pytest
-Uvicorn
+# 生产依赖。版本下限写死：pydantic 必须是 v2——代码里用了 field_validator /
+# model_validator，掉回 v1 会直接 ImportError（2026-11-01 重建 venv 时踩过）。
+FastAPI>=0.110
+pydantic>=2.5,<3
+Uvicorn>=0.27
 bcrypt>=4.0
+
+# 测试依赖（部署机上不装也能跑服务）
+pytest>=8.0
+httpx>=0.27

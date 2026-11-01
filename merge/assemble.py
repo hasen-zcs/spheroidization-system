@@ -38,12 +38,23 @@ def hms_to_seconds(value) -> Optional[float]:
 
 
 def abnormal_flag(abnormal_type: Optional[int]) -> Optional[int]:
-    """0 正常 / 1 异常 / None 未判定。"""
+    """0 正常 / 1 异常 / None 未知。
+
+    2026-11-01 老板定：**未判定（类型 6）算异常**——
+    机器没判出来本身就是质量问题，不能放进"正常"里混过去。
+    只有上游压根没给类型（None）时才留空，那是"没这个字段"，两回事。
+    """
     if abnormal_type is None:
         return None
-    if int(abnormal_type) == TYPE_UNJUDGED:
-        return None
     return 0 if int(abnormal_type) == TYPE_NORMAL else 1
+
+
+def abnormal_reason(record: dict) -> Optional[str]:
+    """异常原因。未判定统一写"未判定"，不带 vpmin 那串技术细节。"""
+    abnormal_type = record.get("abnormal_type")
+    if abnormal_type is not None and int(abnormal_type) == TYPE_UNJUDGED:
+        return "未判定"
+    return record.get("abnormal_reason") or None
 
 
 def span_seconds(start, end) -> Optional[float]:
@@ -144,7 +155,7 @@ def build_payload(pair: Pair, temperature: Optional[dict], device_id: str) -> di
         "actual_spheroidization_time": duration,
         "spheroidization_abnormal": abnormal_flag(abnormal_type),
         "abnormal_type": abnormal_type,
-        "abnormal_reason": record.get("abnormal_reason") or None,
+        "abnormal_reason": abnormal_reason(record),
         "segments": segments_from_record(record, start),
         # 🔴 原样搬，不补偿
         "spheroidization_wire_entry_start_time": feed_start,

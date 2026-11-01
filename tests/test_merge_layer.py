@@ -15,6 +15,7 @@ import pytest
 from merge.assemble import (
     AssembleError,
     abnormal_flag,
+    abnormal_reason,
     build_payload,
     hms_to_seconds,
     plc_skew,
@@ -135,9 +136,26 @@ def test_hms解析():
 
 def test_异常三态():
     assert abnormal_flag(0) == 0
-    assert abnormal_flag(6) is None      # 未判定不能冒充正常
-    assert abnormal_flag(None) is None
+    assert abnormal_flag(6) == 1          # 未判定算异常（老板 2026-11-01 定）
+    assert abnormal_flag(None) is None    # 上游压根没给类型才留空
     assert abnormal_flag(3) == 1
+
+
+def test_未判定原因统一写未判定():
+    line = dict(VPMIN_LINE, abnormal_type=6,
+                abnormal_reason="未判定：缺少亮光时长或标准区间")
+    pair = pair_events(
+        [{"fp": "l1", "start": line["spheroidization_start_time"],
+          "end": line["spheroidization_end_time"], "duration": 95.455,
+          "record": line}],
+        [{"fp": "p1", "start": PLC_LINE["spheroidization_wire_entry_start_time"],
+          "end": PLC_LINE["spheroidization_wire_entry_end_time"], "record": PLC_LINE}],
+        [],
+        Config(),
+    )[0]
+    payload = build_payload(pair, None, "casting-1")
+    assert payload["spheroidization_abnormal"] == 1
+    assert payload["abnormal_reason"] == "未判定"
 
 
 def test_组包不做二次补偿():

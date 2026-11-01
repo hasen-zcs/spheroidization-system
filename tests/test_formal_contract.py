@@ -226,8 +226,8 @@ def test_正常记录的类型是0不是空(env):
     assert body["data"]["spheroidization_abnormal"] is False
 
 
-def test_未判定记录不冒充正常也不计入异常(env):
-    """类型 6 = 未判定：abnormal 允许 NULL，统计里不算异常。"""
+def test_未判定记录按异常入库(env):
+    """类型 6 = 未判定：2026-11-01 老板定，归异常、原因写"未判定"。"""
     client, _ = env
     _body, headers = _login(client)
     client.post("/api/standards", json=_standard_payload(), headers=headers)
@@ -242,11 +242,12 @@ def test_未判定记录不冒充正常也不计入异常(env):
     ).json()
     assert body["code"] == 200, body
     assert body["data"]["abnormal_type"] == 6
-    assert body["data"]["spheroidization_abnormal"] is None
+    assert body["data"]["spheroidization_abnormal"] is True
+    assert body["data"]["abnormal_reason"] == "未判定"
 
     stats = client.get("/api/spheroidization/stats").json()["data"]
     assert stats["total"] == 1
-    assert stats["abnormal"] == 0
+    assert stats["abnormal"] == 1
 
 
 def test_按钮时刻可入库并随响应返回(env):

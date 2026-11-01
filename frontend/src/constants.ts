@@ -14,9 +14,10 @@ export const ABNORMAL_TYPE_LABELS: Record<number, string> = {
   6: "未判定",
 }
 
-/** 机器检测结果的三态：true 异常 / false 正常 / null 未判定。
+/** 机器检测结果的三态：true 异常 / false 正常 / null 未知。
  *
- * 后端 abnormal_type 允许为空（机器没判出来），页面不能把"没判定"显示成"正常"——
+ * 2026-11-01 起"未判定（类型 6）"归入异常（abnormal=true，原因写"未判定"），
+ * pending 只留给"上游压根没给判定"的老数据——页面不能把它显示成"正常"，
  * 质量系统里这等于替机器下结论。
  */
 export type AbnormalTone = "abnormal" | "normal" | "pending"
