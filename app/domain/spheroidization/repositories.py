@@ -31,6 +31,18 @@ class SpheroidizationRepository(ABC):
         ...
 
     @abstractmethod
+    def save_no_commit(self, record: SpheroidizationRecord) -> SpheroidizationRecord:
+        """
+        新增一条记录，但**不提交事务**。语义与 save 相同，只是把提交权交给调用方。
+
+        为什么需要它：幂等建档要在一个事务里完成"记录 + 分段 + 上传台账"，
+        任何一步失败都必须整体回滚。实现方不得在本方法内提交或回滚——
+        一旦提前提交，回滚就变成了假动作，库里会留下半条记录。
+        场景：CreateSpheroidizationUseCase 的幂等路径。
+        """
+        ...
+
+    @abstractmethod
     def update(self, record: SpheroidizationRecord) -> SpheroidizationRecord:
         """
         更新一条已有记录，对应 UPDATE。

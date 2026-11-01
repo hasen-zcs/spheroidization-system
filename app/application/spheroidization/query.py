@@ -1,6 +1,7 @@
 from typing import List, Optional
 
 from app.domain.spheroidization.entities import SpheroidizationRecord
+from app.domain.flash.repositories import FlashSegmentRepository
 from app.domain.review.repositories import ReviewRepository
 from app.domain.spheroidization.repositories import SpheroidizationRepository
 from app.domain.temperature.entities import TemperatureRecord
@@ -31,10 +32,19 @@ class QuerySpheroidizationUseCase:
         spheroid_repo: SpheroidizationRepository,
         review_repo: ReviewRepository,
         temperature_repo: TemperatureRepository,
+        segment_repo: FlashSegmentRepository | None = None,
     ):
         self.spheroid_repo = spheroid_repo
         self.review_repo = review_repo
         self.temperature_repo = temperature_repo
+        # 分段仓储只给详情用，允许不传（老测试构造函数不用改）
+        self.segment_repo = segment_repo
+
+    def segments_for(self, record_id: int):
+        """查一条记录的分段明细。没装分段仓储/没有分段都返回空列表。"""
+        if self.segment_repo is None:
+            return []
+        return self.segment_repo.list_by_record(record_id)
 
     def list_all(self) -> List[SpheroidizationRecord]:
         """查全部球化检测记录，无数据返回空列表。"""

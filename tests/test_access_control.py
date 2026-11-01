@@ -94,6 +94,9 @@ def test_建表后七张表和触发器都在(env):
         "StandardSwitchLogs",
         "UserAccount",
         "UserPermission",
+        # v3（2026-11-01）：幂等台账 + 分段明细
+        "UploadLedger",
+        "FlashSegment",
     }
 
     triggers = {

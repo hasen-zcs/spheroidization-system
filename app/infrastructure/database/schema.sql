@@ -93,6 +93,48 @@ CREATE TABLE UserPermission (
 	FOREIGN KEY (user_id) REFERENCES UserAccount(user_id) ON DELETE CASCADE
 ) STRICT;
 
+-- ==========================================================
+-- v3（2026-11-01，第一刀）：上传台账 + 分段明细
+-- 主表不改，只加这两张表；老库由 scripts/migrate_db.py 补建。
+-- ==========================================================
+
+-- 上传幂等台账：同一 (device_id, external_id) 只允许建档一次。
+-- payload_sha 存的是"这次请求内容的指纹"：
+--   sha 相同 = 同一条数据重放 → 返回已有记录（existing=true）
+--   sha 不同 = 外部号撞车（计数器重置等）→ 拒收，绝不覆盖
+CREATE TABLE UploadLedger (
+	ledger_id INTEGER PRIMARY KEY AUTOINCREMENT, -- 主键，id自增
+	device_id TEXT NOT NULL, -- 设备/工位标识，例如 casting-1
+	external_id TEXT NOT NULL, -- 上游自己的流水号，目前是 vpmin 的 reaction_count
+	record_id INTEGER NOT NULL, -- 建档得到的主键
+	payload_sha TEXT NOT NULL, -- 请求内容指纹（sha256 十六进制）
+	created_at TEXT NOT NULL, -- 入账时间
+	UNIQUE (device_id, external_id), -- 幂等键：并发重放靠它兜底
+	FOREIGN KEY (record_id) REFERENCES SpheroidizationRecord(spheroidization_record_id) ON DELETE CASCADE
+) STRICT;
+
+-- 分段明细：类型 5（中间亮光停顿）的证据链。
+-- 偏移一律相对"亮光首段起点"，单位秒，保留 3 位小数；
+-- 单段/老数据没有分段，本表可以没有行。
+CREATE TABLE FlashSegment (
+	segment_id INTEGER PRIMARY KEY AUTOINCREMENT, -- 主键，id自增
+	spheroidization_record_id INTEGER NOT NULL, -- 关联的球化记录
+	seg_index INTEGER NOT NULL CHECK (seg_index >= 1), -- 段号，从 1 连续
+	start_offset REAL NOT NULL, -- 本段起点（相对亮光首段起点，秒）
+	end_offset REAL NOT NULL, -- 本段终点（同上）
+	gap_before REAL, -- 与上一段的停顿秒数；第一段为空
+	duration REAL NOT NULL, -- 本段时长，= end_offset - start_offset
+	UNIQUE (spheroidization_record_id, seg_index), -- 同一条记录内段号唯一
+	CHECK (end_offset >= start_offset),
+	CHECK (duration >= 0),
+	-- 第一段没有"前一段"，后面的段必须有停顿且为正
+	CHECK (seg_index = 1 OR (gap_before IS NOT NULL AND gap_before > 0)),
+	FOREIGN KEY (spheroidization_record_id) REFERENCES SpheroidizationRecord(spheroidization_record_id) ON DELETE CASCADE
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS idx_uploadledger_record ON UploadLedger(record_id);
+CREATE INDEX IF NOT EXISTS idx_flashsegment_record ON FlashSegment(spheroidization_record_id);
+
 -- 删除后把 AUTOINCREMENT 序列回退到当前最大 ID。
 -- 删除中间行时序列不变；删除最后一行时下一条会复用被删除的 ID。
 CREATE TRIGGER IF NOT EXISTS standard_sync_sequence

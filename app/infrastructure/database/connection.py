@@ -122,6 +122,10 @@ REQUIRED_TABLES = (
     "StandardSwitchLogs",
     "UserAccount",
     "UserPermission",
+    # v3（2026-11-01）：上传幂等台账 + 分段明细。老库不补这两张表，
+    # 上游一上传就会 OperationalError，所以放进启动自检。
+    "UploadLedger",
+    "FlashSegment",
 )
 
 # 升级过表结构的列：老库缺这些列时，任何写入都会 OperationalError，

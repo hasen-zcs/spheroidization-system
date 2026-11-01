@@ -117,6 +117,18 @@ async function processRecord() {
 }
 
 // 后加的几列在老记录上没有值，空值统一显示成 --
+// 分段明细（v3）。老记录/单段记录后端给空数组，这里统一按"无分段"处理。
+const segments = computed(() => record.value?.segments ?? [])
+const hasSegments = computed(() => segments.value.length > 0)
+
+// 秒 -> 保留 3 位，去掉多余的 0（既保留精度又不刷屏）
+function sec(value: number | null | undefined) {
+  if (value === null || value === undefined) {
+    return "--"
+  }
+  return Number(value.toFixed(3)).toString()
+}
+
 function display(value: string | number | null | undefined) {
   return value === null || value === undefined || value === ""
     ? "--"
@@ -347,6 +359,51 @@ onMounted(() => {
           </div>
 
         </div>
+
+      </section>
+
+
+      <!-- 分段明细（v3）：类型 5 中间停顿的证据链 -->
+      <section class="card">
+
+        <div class="section-header">
+          <h2>分段明细</h2>
+          <span v-if="hasSegments">共 {{ segments.length }} 段</span>
+        </div>
+
+        <div
+          v-if="!hasSegments"
+          class="empty"
+        >
+          无分段数据（单段球化或老记录）
+        </div>
+
+        <table
+          v-else
+          class="segment-table"
+        >
+          <thead>
+            <tr>
+              <th>段号</th>
+              <th>起点(s)</th>
+              <th>终点(s)</th>
+              <th>本段时长(s)</th>
+              <th>与上段停顿(s)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="seg in segments"
+              :key="seg.seg_index"
+            >
+              <td>{{ seg.seg_index }}</td>
+              <td>{{ sec(seg.start_offset) }}</td>
+              <td>{{ sec(seg.end_offset) }}</td>
+              <td>{{ sec(seg.duration) }}</td>
+              <td>{{ seg.gap_before === null ? "--" : sec(seg.gap_before) }}</td>
+            </tr>
+          </tbody>
+        </table>
 
       </section>
 
@@ -583,6 +640,32 @@ onMounted(() => {
   align-items: center;
   padding: 16px;
   background: #f7f7f7;
+}
+
+
+/* 分段明细 */
+
+.segment-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.segment-table th,
+.segment-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid #eee;
+  text-align: left;
+}
+
+.segment-table th {
+  color: #666;
+  font-weight: 600;
+  background: #f7f7f7;
+}
+
+.segment-table tbody tr:last-child td {
+  border-bottom: none;
 }
 
 

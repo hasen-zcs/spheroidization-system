@@ -10,11 +10,46 @@ UseCase 和仓储一行都不用动。
 
 import base64
 import binascii
+from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.domain.spheroidization.entities import SpheroidizationRecord
 from app.domain.temperature.entities import TemperatureRecord
+
+
+# 分段校验的容差。上游给的是毫秒级墙钟串，换算成秒后误差在 1ms 量级；
+# 留 20ms 是给"时间串只剩到秒"的调用方（合并层之外的补录程序）留余地。
+_SEC_TOL = 0.02
+
+# 时间串两种写法都收：带毫秒（vpmin 墙钟）和不带（老补录程序）。
+_TIME_FORMATS = ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S")
+
+
+def _parse_time(value: str) -> datetime:
+    for fmt in _TIME_FORMATS:
+        try:
+            return datetime.strptime(value, fmt)
+        except ValueError:
+            continue
+    raise ValueError(f"时间格式无法识别：{value}")
+
+
+class FlashSegmentIn(BaseModel):
+    """一段亮光。偏移相对"亮光首段起点"，单位秒。
+
+    上游 vpmin 给的是墙钟串 + duration_sec/gap_before_sec，
+    合并层负责换算成这里的相对秒（换算规则见第一刀方案 v2 第 5.3 节）。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    seg_index: int = Field(ge=1)
+    start_offset: float = Field(ge=0)
+    end_offset: float = Field(ge=0)
+    # 第一段为空；其余必须 > 0（pydantic 的 gt 已经挡掉 0 和负数）
+    gap_before: float | None = Field(default=None, gt=0)
+    duration: float = Field(ge=0)
 
 
 class SpheroidizationCreateRequest(BaseModel):
@@ -45,6 +80,16 @@ class SpheroidizationCreateRequest(BaseModel):
     # 这里单独留一份，避免以后想恢复"亮光起点"口径时已无据可查。
     plc_button_time: str | None = None
 
+    # ---- v3 幂等入参（2026-11-01）----
+    # 两个必须成对出现：只给一个说明调用方没想清楚幂等键，直接 422，
+    # 免得出现"一半幂等"的半吊子数据。
+    # 不带这两个字段 = 老调用（人工补录、旧上传器），走原路径、不做幂等。
+    device_id: str | None = None
+    external_id: str | None = None
+
+    # 分段明细。单段/老数据不传（缺省空列表），类型 5 必须 ≥ 2 段。
+    segments: list[FlashSegmentIn] = Field(default_factory=list)
+
     # 补录专用的温度入参：机器正常流程走 POST /api/temperature，
     # 只有人工补录才随记录一起带温度。gun_no 默认 0 = 人工录入。
     temperature: float | None = None
@@ -67,6 +112,89 @@ class SpheroidizationCreateRequest(BaseModel):
         """补录温度必须成对出现，单项没法落库也没法展示。"""
         if (self.temperature is None) != (self.temperature_time is None):
             raise ValueError("temperature 和 temperature_time 必须同时提供")
+        return self
+
+    @model_validator(mode="after")
+    def _idempotency_pair(self):
+        """device_id 和 external_id 要么都给，要么都不给。"""
+        if (self.device_id is None) != (self.external_id is None):
+            raise ValueError("device_id 和 external_id 必须同时提供（幂等键）")
+        if self.device_id is not None and not self.device_id.strip():
+            raise ValueError("device_id 不能为空串")
+        if self.external_id is not None and not self.external_id.strip():
+            raise ValueError("external_id 不能为空串")
+        return self
+
+    @model_validator(mode="after")
+    def _segments_consistent(self):
+        """分段不变量。不合法直接 422，宁可整条拒收也不入库脏数据。
+
+        规则（第一刀方案 v2 第 5.4 节）：
+        1. 段号从 1 连续递增
+        2. 首段没有 gap_before，其余必须有且 > 0
+        3. 段内 end >= start，跨段 start >= 上一段 end
+        4. 每段 duration 与 (end - start) 一致
+        5. 首段起点 = 亮光起点、末段终点 = 亮光终点、Σ时长+Σ停顿 = 跨度
+        6. abnormal_type == 5 必须至少 2 段
+        """
+        segs = self.segments
+        # "类型 5 必须带 ≥2 段"只对幂等路径（新合并层）强制：
+        # 老调用/人工补录只给结论不给分段，是老契约，卡死它会直接丢记录。
+        # 新链路是程序自动发的，分段一定在，强制它才拿得到证据链。
+        if (
+            self.abnormal_type == 5
+            and self.device_id is not None
+            and len(segs) < 2
+        ):
+            raise ValueError("abnormal_type=5（中间停顿）必须提供至少 2 段 segments")
+
+        if not segs:
+            return self
+
+        for i, seg in enumerate(segs):
+            if seg.seg_index != i + 1:
+                raise ValueError(
+                    f"segments 段号必须从 1 连续递增，第 {i + 1} 条给的是 {seg.seg_index}"
+                )
+            if seg.end_offset < seg.start_offset:
+                raise ValueError(f"第 {seg.seg_index} 段 end_offset < start_offset")
+            if abs(seg.duration - (seg.end_offset - seg.start_offset)) > _SEC_TOL:
+                raise ValueError(
+                    f"第 {seg.seg_index} 段 duration 与起止差对不上："
+                    f"{seg.duration} vs {seg.end_offset - seg.start_offset}"
+                )
+            if i == 0:
+                if seg.gap_before is not None:
+                    raise ValueError("第一段不能有 gap_before（没有上一段）")
+            else:
+                if seg.gap_before is None:
+                    raise ValueError(f"第 {seg.seg_index} 段缺少 gap_before")
+                prev = segs[i - 1]
+                actual_gap = seg.start_offset - prev.end_offset
+                if abs(actual_gap - seg.gap_before) > _SEC_TOL:
+                    raise ValueError(
+                        f"第 {seg.seg_index} 段 gap_before 与起止对不上："
+                        f"{seg.gap_before} vs {actual_gap}"
+                    )
+
+        # 与记录的亮光起止时刻自洽：只有两边都给了才校验，
+        # 类型 1/2 这类"没跑完"的记录本来就没有起止时间。
+        if self.spheroidization_start_time and self.spheroidization_end_time:
+            span = (
+                _parse_time(self.spheroidization_end_time)
+                - _parse_time(self.spheroidization_start_time)
+            ).total_seconds()
+            if abs(segs[0].start_offset) > _SEC_TOL:
+                raise ValueError("首段 start_offset 必须为 0（相对亮光起点）")
+            if abs(segs[-1].end_offset - span) > max(_SEC_TOL, 0.05):
+                raise ValueError(
+                    f"末段 end_offset({segs[-1].end_offset}) 与亮光跨度({span}) 对不上"
+                )
+            total = sum(s.duration for s in segs) + sum(
+                s.gap_before or 0.0 for s in segs[1:]
+            )
+            if abs(total - span) > max(_SEC_TOL, 0.05):
+                raise ValueError(f"分段时长+停顿之和({total})与亮光跨度({span})对不上")
         return self
 
     @field_validator("spheroidization_image", mode="before")
@@ -132,12 +260,30 @@ class SpheroidizationResponse(BaseModel):
     processed_by: str | None = None
     review_result: str | None = None
 
+    # 仅详情接口返回；列表接口没有这个键
+    segments: list[dict] | None = None
+
+
+def segments_to_response(segments) -> list[dict]:
+    """分段实体 -> 前端契约。键名用相对秒，前端不用再算时间差。"""
+    return [
+        {
+            "seg_index": seg.seg_index,
+            "start_offset": seg.start_offset,
+            "end_offset": seg.end_offset,
+            "gap_before": seg.gap_before,
+            "duration": seg.duration,
+        }
+        for seg in segments
+    ]
+
 
 def to_response(
     record: SpheroidizationRecord,
     with_image: bool = False,
     review_result: int | None = None,
     temperature: TemperatureRecord | None = None,
+    segments: list[dict] | None = None,
 ) -> dict:
     """实体 -> 前端契约。字段名和 0/1 -> 布尔 的转换都在这里。
 
@@ -153,6 +299,10 @@ def to_response(
 
     temperature 为空时 temperature / temperature_time 返回 None，前端要能处理
     "这条记录还没有关联温度"这种情况。
+
+    segments 只有详情接口传（列表接口不传这个参数 → 响应里就没有这个键）：
+    列表一次几十上百条，分段展开会让响应体积翻几倍，而且列表也用不上。
+    详情里老记录/单段记录给的是空列表，前端显示"无分段数据"。
     """
     data = {
         "id": record.spheroidization_record_id,
@@ -198,5 +348,8 @@ def to_response(
         data["spheroidization_image"] = (
             base64.b64encode(image).decode("ascii") if image is not None else None
         )
+
+    if segments is not None:
+        data["segments"] = segments
 
     return data

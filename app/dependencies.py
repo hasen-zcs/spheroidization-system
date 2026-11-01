@@ -65,6 +65,10 @@ from app.core.exceptions import BusinessException
 from app.core.security import Session, get_session
 from app.domain.standard.application_state import StandardApplicationState
 from app.infrastructure.database.connection import init_database
+from app.infrastructure.database.flash_repo import (
+    SqliteFlashSegmentRepository,
+    SqliteUploadLedgerRepository,
+)
 from app.infrastructure.database.sqlite import (
     SqliteReviewRepository,
     SqliteSpheroidizationRepository,
@@ -107,11 +111,21 @@ class Container:
         self.switchlog_repo = SqliteStandardSwitchLogRepository(self.conn)
         self.user_repo = SqliteUserRepository(self.conn)
         self.user_permission_repo = SqliteUserPermissionRepository(self.conn)
+        # v3：幂等台账 + 分段明细（写方法不提交事务，由用例统一控制）
+        self.upload_ledger_repo = SqliteUploadLedgerRepository(self.conn)
+        self.flash_segment_repo = SqliteFlashSegmentRepository(self.conn)
 
     # ---- UseCase：本身不存状态，每次现构造，成本可忽略 ----
 
     def create_spheroidization(self) -> CreateSpheroidizationUseCase:
-        return CreateSpheroidizationUseCase(self.spheroid_repo, self.standard_repo)
+        # 幂等路径要"建档+分段+台账"一个事务，所以把连接和两个新仓储一起传进去
+        return CreateSpheroidizationUseCase(
+            self.spheroid_repo,
+            self.standard_repo,
+            ledger_repo=self.upload_ledger_repo,
+            segment_repo=self.flash_segment_repo,
+            conn=self.conn,
+        )
 
     def query_spheroidization(self) -> QuerySpheroidizationUseCase:
         # 列表和详情要同时查最新复核结果和关联温度，三个仓储都得传
@@ -119,6 +133,7 @@ class Container:
             self.spheroid_repo,
             self.review_repo,
             self.temperature_repo,
+            segment_repo=self.flash_segment_repo,
         )
 
     def process_spheroidization(self) -> ProcessSpheroidizationUseCase:

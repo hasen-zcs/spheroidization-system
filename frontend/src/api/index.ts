@@ -8,6 +8,16 @@ export interface ApiResponse<T> {
   data: T | null
 }
 
+/** 分段明细：偏移相对"亮光首段起点"，单位秒（v3，2026-11-01） */
+export interface FlashSegment {
+  seg_index: number
+  start_offset: number
+  end_offset: number
+  /** 与上一段的停顿秒数；第一段为 null */
+  gap_before: number | null
+  duration: number
+}
+
 export interface SpheroidizationRecord {
   id: number
   detection_time: string
@@ -37,6 +47,8 @@ export interface SpheroidizationRecord {
 
   // 仅详情接口返回。
   spheroidization_image?: string | null
+  // 仅详情接口返回；列表接口没有这个键。老记录/单段记录是空数组。
+  segments?: FlashSegment[]
 }
 
 export interface SpheroidizationPage {
@@ -82,6 +94,10 @@ export interface ReviewRecord {
 }
 
 export interface CreateSpheroidizationInput {
+  // 幂等键：两个都传才生效（合并层用），人工补录不传
+  device_id?: string | null
+  external_id?: string | null
+  segments?: FlashSegment[]
   detection_time: string
   // 三个时间字段可选（后端已允许 NULL）
   spheroidization_start_time?: string | null

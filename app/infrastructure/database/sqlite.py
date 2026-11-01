@@ -95,55 +95,69 @@ class SqliteSpheroidizationRepository(SpheroidizationRepository):
         return self._to_entity(row)
 
     def save(self, record: SpheroidizationRecord) -> SpheroidizationRecord:
-        """新增一条记录，读回数据库分配的主键后返回。"""
+        """新增一条记录，读回数据库分配的主键后返回。自己提交事务。"""
         with self._conn:
-            # 主键列不写进 INSERT，交给数据库自增分配
-            cursor = self._conn.execute(
-                f"""
-                INSERT INTO {self._table_name} (
-                    standard_record_id,
-                    detection_time, 
-                    spheroidization_start_time,
-                    spheroidization_end_time, 
-                    actual_spheroidization_time,
-                    standard_spheroidization_time, 
-                    spheroidization_abnormal,
-                    abnormal_type, 
-                    abnormal_reason,
-                    plc_button_time,
-                    processed, processed_at, 
-                    processed_by,
-                    spheroidization_wire_entry_start_time,
-                    spheroidization_wire_entry_end_time,
-                    spheroidization_wire_entry_total_duration,
-                    spheroidization_weight, 
-                    spheroidization_image
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                          ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    record.standard_record_id,
-                    record.detection_time,
-                    record.spheroidization_start_time,
-                    record.spheroidization_end_time,
-                    record.actual_spheroidization_time,
-                    record.standard_spheroidization_time,
-                    record.spheroidization_abnormal,
-                    record.abnormal_type,
-                    record.abnormal_reason,
-                    record.plc_button_time,
-                    record.processed,
-                    record.processed_at,
-                    record.processed_by,
-                    record.spheroidization_wire_entry_start_time,
-                    record.spheroidization_wire_entry_end_time,
-                    record.spheroidization_wire_entry_total_duration,
-                    record.spheroidization_weight,
-                    record.spheroidization_image,
-                ),
-            )
-            # lastrowid 就是刚插进去那行的主键
-            record.spheroidization_record_id = cursor.lastrowid
+            return self._insert(record)
+
+    def save_no_commit(
+        self, record: SpheroidizationRecord
+    ) -> SpheroidizationRecord:
+        """新增一条记录，**不提交事务**：由调用方用 `with conn:` 统一包住。
+
+        幂等建档要"建档 + 写分段 + 写台账"三件事同生共死，
+        中途任何一步失败都必须整体回滚，所以这里不能自带提交。
+        """
+        return self._insert(record)
+
+    def _insert(self, record: SpheroidizationRecord) -> SpheroidizationRecord:
+        """真正的 INSERT。读回主键，不碰事务。"""
+        # 主键列不写进 INSERT，交给数据库自增分配
+        cursor = self._conn.execute(
+            f"""
+            INSERT INTO {self._table_name} (
+                standard_record_id,
+                detection_time, 
+                spheroidization_start_time,
+                spheroidization_end_time, 
+                actual_spheroidization_time,
+                standard_spheroidization_time, 
+                spheroidization_abnormal,
+                abnormal_type, 
+                abnormal_reason,
+                plc_button_time,
+                processed, processed_at, 
+                processed_by,
+                spheroidization_wire_entry_start_time,
+                spheroidization_wire_entry_end_time,
+                spheroidization_wire_entry_total_duration,
+                spheroidization_weight, 
+                spheroidization_image
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                      ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                record.standard_record_id,
+                record.detection_time,
+                record.spheroidization_start_time,
+                record.spheroidization_end_time,
+                record.actual_spheroidization_time,
+                record.standard_spheroidization_time,
+                record.spheroidization_abnormal,
+                record.abnormal_type,
+                record.abnormal_reason,
+                record.plc_button_time,
+                record.processed,
+                record.processed_at,
+                record.processed_by,
+                record.spheroidization_wire_entry_start_time,
+                record.spheroidization_wire_entry_end_time,
+                record.spheroidization_wire_entry_total_duration,
+                record.spheroidization_weight,
+                record.spheroidization_image,
+            ),
+        )
+        # lastrowid 就是刚插进去那行的主键
+        record.spheroidization_record_id = cursor.lastrowid
         return record
 
     def update(self, record: SpheroidizationRecord) -> SpheroidizationRecord:

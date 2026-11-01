@@ -11,6 +11,7 @@ from app.application.spheroidization.process import ProcessSpheroidizationUseCas
 from app.application.spheroidization.query import QuerySpheroidizationUseCase
 from app.application.temperature.create import CreateTemperatureUseCase
 from app.core import permissions as P
+from app.domain.flash.entities import FlashSegment
 from app.core.security import Session
 from app.dependencies import (
     get_create_spheroidization_uc,
@@ -25,6 +26,7 @@ from app.schemas.common import fail, ok
 from app.schemas.spheroidization import (
     SpheroidizationCreateRequest,
     SpheroidizationProcessRequest,
+    segments_to_response,
     to_response,
 )
 
@@ -108,7 +110,19 @@ def create_spheroidization(
     # 这个接口是上游检测程序调用的，不是人操作，所以不挂权限校验。
     # 也正因为对程序开放，前端不能保留"新增记录"的人工入口——
     # 不登录就能 POST 假数据，删掉按钮拦不住接口本身，只能靠不放人用。
-    record = uc.execute(
+    # 上游给的分段是"校验用模型"，落库用领域实体；换算规则在合并层做完了，
+    # 到这里已经是相对秒（见第一刀方案 v2 第 5.3 节）。
+    segments = [
+        FlashSegment(
+            seg_index=seg.seg_index,
+            start_offset=seg.start_offset,
+            end_offset=seg.end_offset,
+            gap_before=seg.gap_before,
+            duration=seg.duration,
+        )
+        for seg in data.segments
+    ]
+    record, existing = uc.execute_idempotent(
         detection_time=data.detection_time,
         spheroidization_start_time=data.spheroidization_start_time,
         spheroidization_end_time=data.spheroidization_end_time,
@@ -132,6 +146,10 @@ def create_spheroidization(
         abnormal_reason=data.abnormal_reason,
         plc_button_time=data.plc_button_time,
         spheroidization_image=data.spheroidization_image,
+        # 没带这两个就是老调用（人工补录/旧上传器），用例内部会走原路径
+        device_id=data.device_id,
+        external_id=data.external_id,
+        segments=segments,
     )
     # 人工补录时随记录带的温度：机器流程一律走 POST /api/temperature，
     # 这条分支只为补录服务，gun_no 默认 0 表示人工录入。
@@ -145,9 +163,13 @@ def create_spheroidization(
         )
 
     # 创建响应不回带图片：上游刚把图发过来，再 base64 回去纯属浪费带宽。
+    payload = to_response(record, temperature=temperature)
+    # existing=true 表示这次是幂等命中：数据早就有了，本次没有新建。
+    # 合并层靠它区分"新上传成功"和"重复投递"，不用自己再查一遍。
+    payload["existing"] = existing
     return ok(
-        to_response(record, temperature=temperature),
-        "球化记录创建成功",
+        payload,
+        "球化记录已存在（幂等命中）" if existing else "球化记录创建成功",
     )
 
 
@@ -217,12 +239,15 @@ def get_spheroidization(
     # 上面两个列表接口刻意不带（见 schemas/spheroidization.py 的 to_response）。
     latest_reviews = uc.latest_review_results([record])
     temperatures = uc.temperatures_for([record])
+    segments = uc.segments_for(record.spheroidization_record_id)
     return ok(
         to_response(
             record,
             with_image=True,
             review_result=latest_reviews.get(record.spheroidization_record_id),
             temperature=temperatures.get(record.spheroidization_record_id),
+            # 详情是唯一返回分段的地方；老记录/单段记录给空列表
+            segments=segments_to_response(segments),
         )
     )
 

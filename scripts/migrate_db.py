@@ -81,15 +81,30 @@ def _schema_statements() -> list[tuple[str, str]]:
 
     result = []
     for stmt in statements:
-        m = re.match(r"CREATE\s+TABLE\s+(\w+)", stmt, re.I)
+        # 语句前面可能挂着注释块（schema.sql 里成段的中文说明），
+        # re.match 只认开头，不去掉注释整条就会被静默跳过——
+        # 2026-11-01 加 v3 两张表时就踩了这个坑：表没建出来，
+        # 一直到 verify_schema 才报错。
+        body = re.sub(r"^\s*(?:--[^\n]*\n\s*)*", "", stmt)
+        m = re.match(r"CREATE\s+TABLE\s+(\w+)", body, re.I)
         if m:
-            result.append((m.group(1), stmt))
+            result.append((m.group(1), body))
             continue
         m = re.match(
-            r"CREATE\s+TRIGGER\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)", stmt, re.I
+            r"CREATE\s+TRIGGER\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)", body, re.I
         )
         if m:
-            result.append((m.group(1), stmt))
+            result.append((m.group(1), body))
+            continue
+        # 索引也要跟上：全新部署时 schema.sql 整份执行自然会建，
+        # 老库走"只加表"分支时如果只挑 CREATE TABLE，索引就永远缺。
+        m = re.match(
+            r"CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)",
+            body,
+            re.I,
+        )
+        if m:
+            result.append((m.group(1), body))
     return result
 
 
@@ -119,6 +134,11 @@ def _ensure_v2_columns(conn) -> None:
     conn.execute(f"ALTER TABLE {MAIN_TABLE} ADD COLUMN plc_button_time TEXT")
 
 
+# v3（2026-11-01 第一刀）新增的两张表。老库即使主表结构已经是新版，
+# 也缺这两张，必须补建，否则上游一上传就 no such table。
+V3_TABLES = ("UploadLedger", "FlashSegment")
+
+
 def _is_migrated(conn) -> bool:
     tables = _tables(conn)
     if MAIN_TABLE not in tables:
@@ -126,7 +146,9 @@ def _is_migrated(conn) -> bool:
     cols = set(_columns(conn, MAIN_TABLE))
     has_new_cols = {"abnormal_type", "abnormal_reason", "plc_button_time"} <= cols
     no_old_cols = not (set(OLD_ONLY_COLUMNS) & cols)
-    return has_new_cols and no_old_cols
+    # 缺 v3 表也算"没迁完"：主表不用重建，走"只加表"分支
+    has_v3 = set(V3_TABLES) <= tables
+    return has_new_cols and no_old_cols and has_v3
 
 
 def _backup(db_path: Path) -> Path:
