@@ -154,7 +154,9 @@ def create_spheroidization(
     # 人工补录时随记录带的温度：机器流程一律走 POST /api/temperature，
     # 这条分支只为补录服务，gun_no 默认 0 表示人工录入。
     temperature = None
-    if data.temperature is not None:
+    # 幂等命中时不再补温度：上一次投递已经把温度落库了，
+    # 再来一遍就会给同一条记录挂出第二条读数（枪号时间都一样，纯脏数据）。
+    if data.temperature is not None and not existing:
         temperature = temp_uc.execute(
             gun_no=data.gun_no,
             temperature=data.temperature,

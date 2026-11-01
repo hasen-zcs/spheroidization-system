@@ -162,3 +162,24 @@ def test_老调用不带幂等键仍然能建且无分段(env):
         f"/api/spheroidization/{body['data']['id']}", headers=headers
     ).json()
     assert detail["data"]["segments"] == []
+
+
+def test_幂等命中不再补第二条温度(env):
+    """重放时温度不能重复落库：同一条记录挂两条一模一样的读数就是脏数据。"""
+    client, container, _ = env
+    payload = dict(RECORD)
+    payload["segments"] = [dict(s) for s in RECORD["segments"]]
+    payload["temperature"] = 1523.5
+    payload["temperature_time"] = "2026-11-01 09:09:00"
+    payload["gun_no"] = 4
+
+    first = client.post("/api/spheroidization", json=payload).json()
+    second = client.post("/api/spheroidization", json=payload).json()
+
+    assert first["data"]["existing"] is False
+    assert second["data"]["existing"] is True
+    count = container.conn.execute(
+        "SELECT COUNT(*) FROM TemperatureRecord WHERE spheroidization_record_id = ?",
+        (first["data"]["id"],),
+    ).fetchone()[0]
+    assert count == 1
