@@ -57,10 +57,12 @@ async function submit() {
       return
     }
 
-    // 业务失败统一提示，不区分账号不存在与密码错误；
-    // 网络错误（连不上后端）才显示原始信息
+    // 密码错误/账号不存在统一提示，不区分；
+    // 但后端给出的其他业务提示（如「账号已停用」）和网络错误原样显示
     errorMessage.value =
-      result.code === -1 ? result.message : "用户名或密码不正确"
+      result.message && result.message !== "用户名或密码不正确"
+        ? result.message
+        : "用户名或密码不正确"
   } finally {
     submitting.value = false
   }

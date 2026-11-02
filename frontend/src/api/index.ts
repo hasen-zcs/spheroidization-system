@@ -421,6 +421,17 @@ export async function getCurrentUser(): Promise<ApiResponse<AuthUser>> {
 }
 
 
+export async function changeOwnPassword(
+  oldPassword: string,
+  newPassword: string
+): Promise<ApiResponse<null>> {
+  return request(
+    "/api/users/me/password",
+    jsonOptions("POST", { old_password: oldPassword, new_password: newPassword })
+  )
+}
+
+
 // ====================
 // 用户管理
 // ====================

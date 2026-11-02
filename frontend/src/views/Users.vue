@@ -221,13 +221,20 @@ async function toggleEnabled(user: UserRecord) {
   try {
     const result = await setUserEnabled(user.id, nextEnabled)
 
-    if (result.code === 200 && result.data) {
+    if (result.code === 200) {
       const index = users.value.findIndex((item) => item.id === user.id)
       if (index >= 0) {
-        users.value[index] = result.data as UserRecord
+        // 后端启用/停用接口 data 为 null：回退用本地乐观更新，
+        // 否则开关停在旧状态（F5）
+        const current = users.value[index]
+        users.value[index] =
+          (result.data as UserRecord | null) ?? {
+            ...current,
+            enabled: nextEnabled,
+          }
       }
       flashNotice(
-        `用户「${user.username}」已${result.data.enabled ? "启用" : "禁用"}`
+        `用户「${user.username}」已${nextEnabled ? "启用" : "禁用"}`
       )
     } else {
       alert(result.message || "操作失败")

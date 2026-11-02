@@ -484,6 +484,13 @@ a {
   font-size: 12px;
 }
 
+.dialog-error {
+  margin-top: 4px;
+  margin-bottom: 8px;
+  color: #d4380d;
+  font-size: 12px;
+}
+
 .dialog-actions {
   display: flex;
   justify-content: flex-end;

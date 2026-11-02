@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from "vue"
 import { useRoute, useRouter } from "vue-router"
 
-import { getCurrentUser, health, logout } from "./api"
+import { changeOwnPassword, getCurrentUser, health, logout } from "./api"
 import {
   can,
   clearSession,
@@ -42,6 +42,73 @@ async function handleLogout() {
   }
   clearSession()
   void router.push("/")
+}
+
+// ====================
+// 自查改密（F2：后端接口 /me/password 早就在，前端没接）
+// 成功后后端吊销该账号全部 token（含当前）→ 强制重新登录
+// ====================
+const pwDialogOpen = ref(false)
+const oldPassword = ref("")
+const newPassword = ref("")
+const confirmPassword = ref("")
+const pwError = ref("")
+const pwSubmitting = ref(false)
+const pwChanged = ref(false)
+
+function openPasswordDialog() {
+  oldPassword.value = ""
+  newPassword.value = ""
+  confirmPassword.value = ""
+  pwError.value = ""
+  pwChanged.value = false
+  pwDialogOpen.value = true
+}
+
+async function submitPasswordChange() {
+  if (!oldPassword.value || !newPassword.value) {
+    pwError.value = "请输入旧密码和新密码"
+    return
+  }
+  if (newPassword.value !== confirmPassword.value) {
+    pwError.value = "新密码与确认密码不一致"
+    return
+  }
+  // 前端预检与后端策略一致（≥8 位 + 字母 + 数字），最终以后端为准
+  if (
+    newPassword.value.length < 8 ||
+    !/[a-zA-Z]/.test(newPassword.value) ||
+    !/\d/.test(newPassword.value)
+  ) {
+    pwError.value = "新密码需 ≥8 位，且同时包含字母和数字"
+    return
+  }
+
+  pwSubmitting.value = true
+  pwError.value = ""
+
+  try {
+    const result = await changeOwnPassword(
+      oldPassword.value,
+      newPassword.value
+    )
+    if (result.code === 200) {
+      pwChanged.value = true
+    } else {
+      pwError.value = result.message || "密码修改失败"
+    }
+  } finally {
+    pwSubmitting.value = false
+  }
+}
+
+function closePasswordDialog() {
+  const needRelogin = pwChanged.value
+  pwDialogOpen.value = false
+  if (needRelogin) {
+    clearSession()
+    void router.push("/login")
+  }
 }
 
 // 接口返回 code=403 时的无权限提示（请求层派发事件）
@@ -149,6 +216,15 @@ onUnmounted(() => {
           v-if="isLoggedIn()"
           class="nav-logout"
           type="button"
+          @click="openPasswordDialog"
+        >
+          修改密码
+        </button>
+
+        <button
+          v-if="isLoggedIn()"
+          class="nav-logout"
+          type="button"
           @click="handleLogout"
         >
           退出登录
@@ -188,6 +264,98 @@ onUnmounted(() => {
       class="forbidden-toast"
     >
       {{ forbiddenMessage }}
+    </div>
+
+    <!-- 自查改密弹窗（F2） -->
+    <div
+      v-if="pwDialogOpen"
+      class="dialog-overlay"
+      @click.self="closePasswordDialog"
+    >
+      <div class="dialog">
+        <template v-if="!pwChanged">
+          <h3>
+            修改密码
+          </h3>
+
+          <p class="dialog-hint">
+            新密码需 ≥8 位，且同时包含字母和数字。修改成功后本账号全部登录态立即失效，需重新登录。
+          </p>
+
+          <label class="dialog-field">
+            <span>旧密码</span>
+            <input
+              v-model="oldPassword"
+              type="password"
+              placeholder="请输入当前密码"
+            />
+          </label>
+
+          <label class="dialog-field">
+            <span>新密码</span>
+            <input
+              v-model="newPassword"
+              type="password"
+              placeholder="≥8 位，字母 + 数字"
+            />
+          </label>
+
+          <label class="dialog-field">
+            <span>确认</span>
+            <input
+              v-model="confirmPassword"
+              type="password"
+              placeholder="请再次输入新密码"
+            />
+          </label>
+
+          <p
+            v-if="pwError"
+            class="dialog-error"
+          >
+            {{ pwError }}
+          </p>
+
+          <div class="dialog-actions">
+            <button
+              class="secondary-button"
+              type="button"
+              @click="closePasswordDialog"
+            >
+              取消
+            </button>
+
+            <button
+              class="primary-button"
+              :disabled="pwSubmitting"
+              type="button"
+              @click="submitPasswordChange"
+            >
+              {{ pwSubmitting ? "修改中..." : "确认修改" }}
+            </button>
+          </div>
+        </template>
+
+        <template v-else>
+          <h3>
+            密码修改成功
+          </h3>
+
+          <p class="dialog-hint">
+            本账号已退出登录，请使用新密码重新登录。
+          </p>
+
+          <div class="dialog-actions">
+            <button
+              class="primary-button"
+              type="button"
+              @click="closePasswordDialog"
+            >
+              去登录
+            </button>
+          </div>
+        </template>
+      </div>
     </div>
   </div>
 </template>
