@@ -159,7 +159,7 @@ def heat_segments(record: dict) -> list[dict]:
     return out
 
 
-def build_payload_from_heat(record: dict, temperature: Optional[dict], device_id: str) -> dict:
+def build_payload_from_heat(record: dict, temperature: Optional[dict], device_id: str, image: Optional[str] = None) -> dict:
     """heat 主源组包：一行一炉，记录已融合反应+PLC 字段，不需要配对。
 
     与 build_payload 的差异：
@@ -167,6 +167,7 @@ def build_payload_from_heat(record: dict, temperature: Optional[dict], device_id
     - 时长算不出就传 null（没有起止 → 退回 hms 串 → 都没有就 null）
     - PLC 四字段直接取 record 里的同名键（heat 记录已融合）
     - 温度同现规则：有就填，无则不填，绝不造假
+    - image：heat 记录本身不带图，由调用方从 reaction 配对结果传入；record 自带图时优先用 record 的
     """
     start = record.get("spheroidization_start_time") or None
     end = record.get("spheroidization_end_time") or None
@@ -205,6 +206,10 @@ def build_payload_from_heat(record: dict, temperature: Optional[dict], device_id
         # 后端温度表只认到秒，毫秒要去掉
         payload["temperature_time"] = re.sub(r"\.\d+$", "", str(temperature["measured_at"]))
         payload["gun_no"] = int(temperature["gun_no"])
+
+    image = record.get("spheroidization_image") or image
+    if image:
+        payload["spheroidization_image"] = _strip_data_uri(image)
 
     return payload
 

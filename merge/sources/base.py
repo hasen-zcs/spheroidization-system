@@ -30,10 +30,14 @@ def tail_lines(
 
     调用方拿到结果后要**先入库再提交游标**，否则中间崩溃会丢一批。
     """
-    if not path.exists():
+    # PermissionError 也当不可用：非 root 跑测试/诊断时默认路径 /root/MR 摸不到，
+    # 不能让整个合并循环崩掉（3.12 的 exists() 会往上抛 PermissionError）。
+    try:
+        if not path.exists():
+            return [], 0, 0
+        st = path.stat()
+    except OSError:
         return [], 0, 0
-
-    st = path.stat()
     inode, offset = (cursor or (st.st_ino, 0))
     if inode != st.st_ino or st.st_size < offset:
         # 文件被替换或截断：从头来，指纹去重兜底

@@ -13,6 +13,7 @@
 
 import hashlib
 import json
+import os
 import time
 from datetime import datetime
 from pathlib import Path
@@ -20,6 +21,7 @@ from typing import Callable, Optional
 
 from .assemble import (
     AssembleError,
+    _strip_data_uri,
     backfill_plc_from_all_plc,
     body_json,
     build_payload,
@@ -63,7 +65,9 @@ class MergeService:
         self.uploader = uploader or Uploader(cfg)
         self.log = log
         self._guard_until: Optional[float] = None
-        self._last_guard_log = 0.0
+        self._last_guard_log = 0
+        self._vpmin_warned = False
+        self._heat_path_used = False
 
     # ---------------- 主循环 ----------------
 
@@ -81,6 +85,7 @@ class MergeService:
             "heat": 0,
             "no_plc_streak": 0,
         }
+        self._heat_path_used = False
         self._ingest(stats)
         self._match(stats)
         self._flush_uploads(stats)
@@ -116,6 +121,7 @@ class MergeService:
         # heat 文件不存在（或所在目录不可访问）→ 回落 reactions 老路径，行为完全不变。
         if cfg.source == "heat":
             if _heat_file_usable(cfg.heat_file):
+                self._heat_path_used = True
                 self._ingest_heat(stats)
                 return
             self.log(
@@ -217,6 +223,48 @@ class MergeService:
             if inode:
                 self.state.set_cursor(cfg.temp_all_file, inode, offset)
 
+        # reaction 文件同步追尾（heat 路径）：heat 记录本身不带亮光分析图，
+        # 图在 reaction 里。先读它再读 heat，同一轮到的炉子图已就位；
+        # 配上的行组包后立即删（图已入 pending_upload），剩下的由 pending_ttl 清理。
+        # 文件不可读（未配/权限）→ 本次无图，只告警一次，其余功能不受影响。
+        try:
+            vpmin_readable = cfg.vpmin_file.exists() and os.access(cfg.vpmin_file, os.R_OK)
+        except OSError:
+            vpmin_readable = False
+        if not vpmin_readable:
+            if not self._vpmin_warned:
+                self.log(
+                    f"[WARN] reaction 文件不可读：{cfg.vpmin_file} → 新炉无图"
+                    "（其余功能不受影响；要图请配 MERGE_VPMIN_FILE）"
+                )
+                self._vpmin_warned = True
+        else:
+            events, inode, offset = vpmin_src.read_new(
+                cfg.vpmin_file, self._cursor(cfg.vpmin_file)
+            )
+            with self.state:
+                for event in events:
+                    if event["kind"] == "bad":
+                        self.state.dead_letter(
+                            sha=f"bad-vpmin-{event['raw'][:32]}",
+                            source="vpmin",
+                            external_id=None,
+                            raw=event["raw"][:2000],
+                            error="jsonl 行解析失败",
+                        )
+                        continue
+                    if self.state.add_light(
+                        event["fp"],
+                        vpmin_src.encode(event["record"]),
+                        event["start"],
+                        event["end"],
+                        event["duration"],
+                        event["reaction_count"],
+                    ):
+                        stats["lights"] = stats.get("lights", 0) + 1
+                if inode:
+                    self.state.set_cursor(cfg.vpmin_file, inode, offset)
+
         heat_events, inode, offset = heat_src.read_new(
             cfg.heat_file, self._cursor(cfg.heat_file)
         )
@@ -255,7 +303,11 @@ class MergeService:
                     anchor_kind="button" if rec.get("plc_anchor") == "button" else "light",
                 )
                 temperature = self._match_temperature(pair)
-                payload = build_payload_from_heat(rec, temperature, cfg.device_id)
+                # 从配对到的 reaction 行取亮光分析图（配不到就无图，行为与以前一致）
+                image = self._attach_image(rec, parse_time(anchor))
+                payload = build_payload_from_heat(
+                    rec, temperature, cfg.device_id, image=image
+                )
                 body = body_json(payload)
                 if cfg.dry_run:
                     self._write_dry_run(payload, pair)
@@ -274,6 +326,28 @@ class MergeService:
                 processed += 1
             if inode:
                 self.state.set_cursor(cfg.heat_file, inode, offset)
+
+    def _attach_image(self, rec: dict, anchor_dt: Optional[datetime]) -> Optional[str]:
+        """heat 炉配 reaction 图：纯时间窗 [锚点-before, 锚点+after] 内取最近的。
+
+        不用 rc：现场 heat 与 reactions 的 reaction_count 是两套不同步计数器（实测 rc 相等命中 0）。
+        命中即删该行：图已随 payload 进 pending_upload（未传成功前一直留着），
+        状态库不留第二份；无图的行也删，避免反复匹配。
+        注意：在调用方的 `with self.state:` 事务里执行，删行与入队同生共死。
+        """
+        if anchor_dt is None:
+            return None
+        found = self.state.find_light_for_heat(
+            anchor_dt, self.cfg.image_match_before, self.cfg.image_match_after
+        )
+        if found is None:
+            return None
+        payload, fp = found
+        self.state.delete_light(fp)
+        image = payload.get("spheroidization_image")
+        if not image:
+            return None
+        return _strip_data_uri(str(image))
 
     # ---------------- 2. 配对组包 ----------------
 
@@ -437,6 +511,11 @@ class MergeService:
         守卫只负责**喊人**：连续 N 炉都这样，说明规则的前提（采集正常）不成立了，
         继续静默丢就是一整天的数据没了。
         """
+        if self._heat_path_used:
+            # heat 路径不读 PLC 源：light 行只为配图追尾 reactions，
+            # "有亮光没进线"是常态而非告警信号，守卫不适用（E2E 曾误报）。
+            stats["no_plc_streak"] = 0
+            return
         streak = self.state.recent_light_misses(limit=max(self.cfg.no_plc_guard, 1))
         stats["no_plc_streak"] = streak
         if not self.cfg.no_plc_guard or streak < self.cfg.no_plc_guard:

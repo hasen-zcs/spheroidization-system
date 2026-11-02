@@ -22,6 +22,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Iterable, Optional
 
+from .pair import parse_time
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS cursor (
     path TEXT PRIMARY KEY,
@@ -162,6 +164,41 @@ class MergeState:
             (fp, payload, start, end, duration, reaction_count, _now()),
         )
         return cur.rowcount > 0
+
+    def find_light_for_heat(
+        self,
+        anchor: Optional[datetime],
+        before: float,
+        after: float,
+    ):
+        """heat 路径配图片：亮光起点落在 [锚点-before, 锚点+after] 的亮光事件，取最近的。
+
+        不用 reaction_count：现场两套计数器不同步（heat 复位过、reactions 单调），
+        rc 相等命中率 = 0。时间窗实测安全（相邻炉锚点最小间隔 531s）。
+
+        :return: (payload 字典, fp)；没配到返回 None。
+        """
+        if anchor is None:
+            return None
+        best = None  # (距离, payload, fp)
+        rows = self.conn.execute(
+            "SELECT fp, payload, light_start FROM light_event WHERE matched = 0"
+        ).fetchall()
+        for fp, payload_text, light_start in rows:
+            t = parse_time(light_start)
+            if t is None:
+                continue
+            delta = (t - anchor).total_seconds()
+            if delta < -before or delta > after:
+                continue
+            dist = abs(delta)
+            if best is None or dist < best[0]:
+                best = (dist, json.loads(payload_text), fp)
+        return None if best is None else (best[1], best[2])
+
+    def delete_light(self, fp: str) -> None:
+        """亮光事件消费后删除（图已随炉入库，或判定无图），防止状态库堆积大图。"""
+        self.conn.execute("DELETE FROM light_event WHERE fp = ?", (fp,))
 
     def add_plc(self, fp: str, payload: str, feed_start: str, feed_end: str | None) -> bool:
         cur = self.conn.execute(

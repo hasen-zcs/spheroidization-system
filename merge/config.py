@@ -102,6 +102,16 @@ class Config:
     # 亮光起点必须落在 [进线开始-30, 进线结束+60]
     light_before_feed: float = field(default_factory=lambda: _f("MERGE_LIGHT_BEFORE_FEED", 30.0))
     light_after_feed: float = field(default_factory=lambda: _f("MERGE_LIGHT_AFTER_FEED", 60.0))
+    # heat 路径：reaction 图片匹配窗口（秒）——纯时间窗，非对称。
+    # 现场实测 delta=亮光起点-炉锚点：min 51s / p50 53s / p95 63.5s，全部≥0；
+    # 相邻炉锚点最小间隔 531s → 正向 300s 够不到下一炉，不会串图。
+    # 注意：rc（reaction_count）在 heat 与 reactions 是两套不同步计数器，不能当匹配键。
+    image_match_before: float = field(
+        default_factory=lambda: _f("MERGE_IMAGE_BEFORE", 30.0)
+    )
+    image_match_after: float = field(
+        default_factory=lambda: _f("MERGE_IMAGE_AFTER", 300.0)
+    )
 
     # ---- 温度 ----
     temp_window: float = field(default_factory=lambda: _f("MERGE_TEMP_WINDOW", 600.0))
