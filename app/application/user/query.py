@@ -38,3 +38,15 @@ class QueryUserUseCase:
     def get(self, user_id: int) -> UserAccount | None:
         """按主键查单个账号，查不到返回 None。"""
         return self.user_repo.get_by_id(user_id)
+
+    def list_enabled_usernames(self) -> list[str]:
+        """启用中账号的用户名列表，按用户名排序。
+
+        登录页账号下拉用：只要用户名，不查权限点，
+        不用为下拉列表付 list_all() 的 N+1 权限查询成本。
+        """
+        return sorted(
+            user.username
+            for user in self.user_repo.list_all()
+            if user.enabled == 1
+        )

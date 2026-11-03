@@ -288,6 +288,22 @@ a {
   box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.12);
 }
 
+.login-remember {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 14px;
+  color: #555;
+  font-size: 13px;
+}
+
+.login-remember input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: #1890ff;
+}
+
 .login-error {
   margin-bottom: 12px;
   padding: 8px 10px;

@@ -2,7 +2,7 @@
 import { onMounted, ref } from "vue"
 import { useRoute, useRouter } from "vue-router"
 
-import { login } from "../api"
+import { getAccounts, login } from "../api"
 import { applySession, isLoggedIn } from "../auth"
 
 const route = useRoute()
@@ -10,8 +10,53 @@ const router = useRouter()
 
 const username = ref("")
 const password = ref("")
+const rememberPassword = ref(false)
 const errorMessage = ref("")
 const submitting = ref(false)
+const accountOptions = ref<string[]>([])
+
+// 记住密码存 localStorage：值是一个 {用户名: 密码} 的 JSON 对象
+const SAVED_PASSWORDS_KEY = "sphero_saved_passwords"
+
+function loadSavedPasswords(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(SAVED_PASSWORDS_KEY)
+    const parsed = raw ? (JSON.parse(raw) as unknown) : {}
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      !Array.isArray(parsed)
+    ) {
+      return parsed as Record<string, string>
+    }
+    return {}
+  } catch {
+    return {}
+  }
+}
+
+function persistSavedPasswords(saved: Record<string, string>): void {
+  localStorage.setItem(SAVED_PASSWORDS_KEY, JSON.stringify(saved))
+}
+
+function onUsernameChange() {
+  // 换账号：有存过的密码就自动填入；没有就清空，
+  // 免得上一个账号的密码被误用到新账号上
+  const name = username.value.trim()
+  const saved = loadSavedPasswords()
+  password.value = name in saved ? saved[name] : ""
+}
+
+function applyRememberedPassword(name: string): void {
+  // 登录成功：勾了记住 → 写入/覆盖；没勾 → 删掉该账号的记录
+  const saved = loadSavedPasswords()
+  if (rememberPassword.value) {
+    saved[name] = password.value
+  } else {
+    delete saved[name]
+  }
+  persistSavedPasswords(saved)
+}
 
 // redirect 参数只接受站内路径，防止跳到外部地址
 function safeRedirectPath(): string {
@@ -31,6 +76,13 @@ onMounted(() => {
   if (isLoggedIn()) {
     void router.replace("/")
   }
+
+  // 拉账号下拉列表；失败静默忽略，手输照样能登录
+  void getAccounts().then((result) => {
+    if (result.code === 200 && Array.isArray(result.data)) {
+      accountOptions.value = result.data.map((item) => item.username)
+    }
+  })
 })
 
 async function submit() {
@@ -51,6 +103,8 @@ async function submit() {
     const result = await login(name, password.value)
 
     if (result.code === 200 && result.data) {
+      // 按勾选决定记住/清除该账号的密码
+      applyRememberedPassword(name)
       // token 与用户信息写入登录态，跳回 redirect 页面（没有则回首页）
       applySession(result.data)
       void router.push(safeRedirectPath())
@@ -86,9 +140,18 @@ async function submit() {
         <span>用户名</span>
         <input
           v-model="username"
+          list="account-list"
           autocomplete="username"
           placeholder="请输入用户名"
+          @change="onUsernameChange"
         />
+        <datalist id="account-list">
+          <option
+            v-for="name in accountOptions"
+            :key="name"
+            :value="name"
+          />
+        </datalist>
       </label>
 
       <label class="login-field">
@@ -99,6 +162,14 @@ async function submit() {
           placeholder="请输入密码"
           type="password"
         />
+      </label>
+
+      <label class="login-remember">
+        <input
+          v-model="rememberPassword"
+          type="checkbox"
+        >
+        <span>记住密码</span>
       </label>
 
       <div

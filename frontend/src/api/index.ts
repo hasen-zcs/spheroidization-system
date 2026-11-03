@@ -433,6 +433,18 @@ export async function getCurrentUser(): Promise<ApiResponse<AuthUser>> {
 }
 
 
+// 登录页账号下拉：只含用户名，无其他字段
+export interface AccountOption {
+  username: string
+}
+
+export async function getAccounts(): Promise<
+  ApiResponse<AccountOption[]>
+> {
+  return request("/api/users/accounts")
+}
+
+
 export async function changeOwnPassword(
   oldPassword: string,
   newPassword: string

@@ -51,6 +51,7 @@ PUBLIC_PATHS = frozenset(
     {
         "/api/users/login",
         "/api/users/logout",
+        "/api/users/accounts",  # 登录页账号下拉，免登录（内网环境，老板明确不要求防枚举）
         "/api/temperature",  # 测温枪上报，程序调用，没有登录态
         "/api/spheroidization",  # 监控页列表；游客带 abnormal=true 由接口内拒绝
         "/api/spheroidization/stats",  # 首页统计

@@ -88,6 +88,18 @@ def me(session: Session = Depends(require_login)):
     )
 
 
+@router.get("/accounts")
+def list_accounts(
+    uc: QueryUserUseCase = Depends(get_query_user_uc),
+):
+    # 公开接口（免登录，已登记进 PUBLIC_PATHS）：登录页账号下拉。
+    # 只返回启用中账号的用户名，一个多余字段都没有；
+    # 前端拉取失败会静默降级成手输，不影响登录。
+    return ok(
+        [{"username": username} for username in uc.list_enabled_usernames()]
+    )
+
+
 @router.get("")
 def list_users(
     session: Session = Depends(require_permission(P.ACTION_MANAGE_USERS)),
