@@ -47,6 +47,34 @@ function display(value: string | number | null | undefined) {
     : value
 }
 
+// 进线-亮光差 = 进线时长 - 实际球化时长（秒）。
+// 合并层已把迟到值弃用成 null（显示 —），这里对库里的老数据兜底：>90s 标暗赭色。
+const FEED_END_LAG_LIMIT_S = 90
+
+function feedLagDiff(record: SpheroidizationRecord): number | null {
+  const total = record.spheroidization_wire_entry_total_duration
+  const light = record.actual_spheroidization_time
+  if (
+    total === null ||
+    total === undefined ||
+    light === null ||
+    light === undefined
+  ) {
+    return null
+  }
+  return total - light
+}
+
+function feedLagText(record: SpheroidizationRecord): string {
+  const diff = feedLagDiff(record)
+  return diff === null ? "—" : `${diff.toFixed(1)}s`
+}
+
+function isFeedLagLate(record: SpheroidizationRecord): boolean {
+  const diff = feedLagDiff(record)
+  return diff !== null && diff > FEED_END_LAG_LIMIT_S
+}
+
 async function loadRecords(silent = false) {
   if (!silent) {
     loading.value = true
@@ -290,6 +318,7 @@ onMounted(() => {
               <th>进线结束时间</th>
               <th>标准/实际球化时长</th>
               <th>实际进线时间</th>
+              <th>进线-亮光差</th>
               <th v-if="abnormalOnly">异常类型</th>
               <th v-if="abnormalOnly">异常原因</th>
               <th>检测结果</th>
@@ -325,6 +354,17 @@ onMounted(() => {
               </td>
               <td>
                 {{ display(record.spheroidization_wire_entry_total_duration) }}
+              </td>
+              <td>
+                <span :class="{ 'feed-lag-late': isFeedLagLate(record) }">
+                  {{ feedLagText(record) }}
+                </span>
+                <span
+                  v-if="isFeedLagLate(record)"
+                  class="feed-lag-late-mark"
+                >
+                  迟到
+                </span>
               </td>
               <td
                 v-if="abnormalOnly"
@@ -566,6 +606,17 @@ tbody tr:hover {
 
 .action-cell {
   white-space: nowrap;
+}
+
+.feed-lag-late {
+  color: #8a3b2e;
+  font-weight: 600;
+}
+
+.feed-lag-late-mark {
+  margin-left: 4px;
+  color: #8a3b2e;
+  font-size: 11px;
 }
 
 @media (max-width: 600px) {

@@ -59,11 +59,15 @@ def test_进线结束null且原type非0_保持type追加reason():
 
 
 def test_进线结束非null_行为与原有一致回归():
-    """③ 进线结束/时长非 null → payload 与原行为完全一致（回归）。"""
+    """③ 进线结束/时长非 null → payload 与原行为完全一致（回归）。
+
+    TASK-7 起喂丝结束晚于亮光结束 >90s 会被判迟到弃用，
+    这里的进线结束取亮光结束 +4s（正常尾段），不触发迟到判定。
+    """
     rec = _heat_record(
         abnormal_type=0,
-        spheroidization_wire_entry_end_time="2026-11-03 09:05:25.000",
-        spheroidization_wire_entry_total_duration=300.0,
+        spheroidization_wire_entry_end_time="2026-11-03 09:02:04.000",
+        spheroidization_wire_entry_total_duration=99.0,
     )
     payload = build_payload_from_heat(rec, None, DEVICE)
     expected = {
@@ -79,8 +83,8 @@ def test_进线结束非null_行为与原有一致回归():
         "abnormal_reason": None,
         "segments": [],
         "spheroidization_wire_entry_start_time": "2026-11-03 09:00:25.000",
-        "spheroidization_wire_entry_end_time": "2026-11-03 09:05:25.000",
-        "spheroidization_wire_entry_total_duration": 300.0,
+        "spheroidization_wire_entry_end_time": "2026-11-03 09:02:04.000",
+        "spheroidization_wire_entry_total_duration": 99.0,
         "spheroidization_weight": 1600.0,
     }
     assert payload == expected

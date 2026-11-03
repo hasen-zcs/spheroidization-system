@@ -25,6 +25,10 @@ HMS_RE = re.compile(r"^(\d+):(\d+):(\d+(?:\.\d+)?)$")
 TYPE_UNJUDGED = 6
 TYPE_NORMAL = 0
 
+# 喂丝结束信号迟到阈值（秒）：晚于亮光结束 90s 以上才到达 → 判定信号迟到，
+# 进线结束/时长按无效处理（NULL + 类型 2 语义），原始值写入原因可追溯。
+FEED_END_LAG_LIMIT_S = 90.0
+
 
 def hms_to_seconds(value) -> Optional[float]:
     if value is None:
@@ -211,12 +215,37 @@ def build_payload_from_heat(record: dict, temperature: Optional[dict], device_id
     if image:
         payload["spheroidization_image"] = _strip_data_uri(image)
 
+    # 喂丝结束信号迟到：晚于亮光结束 90s 以上才到达 → 进线结束/时长按无效处理
+    # （NULL + 类型 2 语义），原始值写进原因可追溯。
+    # 亮光结束缺失（算不出 lag）或喂丝结束缺失（走下面缺失路径）都不判定。
+    feed_end_lag_rejected = False
+    lag = span_seconds(
+        payload["spheroidization_end_time"],
+        payload["spheroidization_wire_entry_end_time"],
+    )
+    if lag is not None and lag > FEED_END_LAG_LIMIT_S:
+        feed_end_lag_rejected = True
+        payload["spheroidization_wire_entry_end_time"] = None
+        payload["spheroidization_wire_entry_total_duration"] = None
+        lag_reason = "喂丝结束信号迟到（亮光结束后 +{:.0f}s 才到达，原值弃用）".format(
+            lag
+        )
+        current_type = payload.get("abnormal_type")
+        if current_type in (0, None):
+            payload["abnormal_type"] = 2
+            payload["abnormal_reason"] = lag_reason
+        else:
+            old = payload.get("abnormal_reason")
+            payload["abnormal_reason"] = (str(old) + "；" if old else "") + lag_reason
+        payload["spheroidization_abnormal"] = abnormal_flag(payload["abnormal_type"])
+
     # 进线结束/时长为 null（PLC 没采到喂丝结束，回捞后仍缺）→ 按类型 2 记异常。
     # 原 type 0/None → 改 2 + 写 reason；原 type 非 0 → 保持 type + reason 追加。
+    # 迟到判定已置 null 且写过迟到原因的，这里不再补缺失原因（避免两句并存）。
     if (
         payload["spheroidization_wire_entry_end_time"] is None
         or payload["spheroidization_wire_entry_total_duration"] is None
-    ):
+    ) and not feed_end_lag_rejected:
         missing_reason = "进线结束时间缺失（PLC 未采集到喂丝结束）"
         current_type = payload.get("abnormal_type")
         if current_type in (0, None):
