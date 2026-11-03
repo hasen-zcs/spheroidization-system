@@ -129,3 +129,7 @@ class SwitchStandardUseCase:
             )
             result.append((log, from_standard, to_standard))
         return result
+
+    def count_logs(self, include_deleted: bool = False) -> int:
+        """切换日志总条数，给全库分页列表的 total 用（list_logs 不返回总数）。"""
+        return self.switch_log_repo.count(include_deleted=include_deleted)

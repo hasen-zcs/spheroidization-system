@@ -51,7 +51,7 @@ export function abnormalTypeLabel(
 }
 
 // ====================
-// 权限点（9 个）
+// 权限点（10 个）
 // ====================
 
 export interface PermissionDef {
@@ -73,6 +73,7 @@ export const ACTION_PERMISSIONS: PermissionDef[] = [
   { key: "action:review", label: "人工复核" },
   { key: "action:create_standard", label: "新增检测标准" },
   { key: "action:switch_standard", label: "切换标准" },
+  { key: "action:manage_data", label: "数据管理" },
   { key: "action:manage_users", label: "用户管理操作" },
 ]
 

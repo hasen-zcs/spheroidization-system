@@ -72,6 +72,8 @@ export interface SpheroidizationQuery {
   page_size?: number
   abnormal?: boolean
   processed?: boolean
+  // 管理员数据管理页看已删除记录用；不传则后端默认 false
+  include_deleted?: boolean
 }
 
 export interface StandardRecord {
@@ -199,7 +201,9 @@ function apiUrl(path: string) {
   return `${API_BASE_URL}${path}`
 }
 
-async function request<T>(
+// request / jsonOptions 也导给 api/admin.ts 用：统一走这一套请求封装，
+// 带 token、统一信封处理，别在别的文件里再造一遍 fetch。
+export async function request<T>(
   path: string,
   init?: RequestInit
 ): Promise<ApiResponse<T>> {
@@ -265,7 +269,10 @@ async function request<T>(
   }
 }
 
-function jsonOptions(method: "POST" | "PUT", body: unknown): RequestInit {
+export function jsonOptions(
+  method: "POST" | "PUT",
+  body: unknown
+): RequestInit {
   return {
     method,
     headers: {
@@ -312,6 +319,9 @@ export async function querySpheroidization(
   }
   if (params.processed !== undefined) {
     search.set("processed", String(params.processed))
+  }
+  if (params.include_deleted !== undefined) {
+    search.set("include_deleted", String(params.include_deleted))
   }
 
   return request(`/api/spheroidization?${search.toString()}`)

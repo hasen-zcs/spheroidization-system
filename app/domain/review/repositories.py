@@ -41,3 +41,28 @@ class ReviewRepository(ABC):
         一个球化记录可以有多条复核，所以返回列表而不是单条。
         """
         ...
+
+    @abstractmethod
+    def list_page(
+        self,
+        offset: int,
+        limit: int,
+        include_deleted: bool = False,
+    ) -> List[ReviewRecord]:
+        """
+        分页查全库复核记录，按主键倒序，最新的在最前面。
+        :param offset: 跳过前几条
+        :param limit: 最多返回几条
+        :param include_deleted: 管理员"看已删除"用，默认 False（不含已软删除）
+        :return: 复核实体列表，无记录返回空列表
+        场景：管理员数据管理页的"复核记录"tab。
+        """
+        ...
+
+    @abstractmethod
+    def count(self, include_deleted: bool = False) -> int:
+        """
+        统计复核记录条数，给全库分页列表的 total 用。
+        :param include_deleted: 是否计入已软删除的行
+        """
+        ...

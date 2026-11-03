@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from "vue-router"
 
 import { can, clearSession, isLoggedIn } from "../auth"
+import Admin from "../views/Admin.vue"
 import Forbidden from "../views/Forbidden.vue"
 import Home from "../views/Home.vue"
 import Login from "../views/Login.vue"
@@ -90,6 +91,15 @@ const router = createRouter({
           },
         },
       ],
+    },
+    {
+      // 顶层路由，不挂在 /records 下面（数据管理独立于业务记录模块）
+      path: "/admin",
+      component: Admin,
+      meta: {
+        title: "数据管理",
+        permission: "action:manage_data",
+      },
     },
     {
       path: "/login",

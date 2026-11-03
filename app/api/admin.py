@@ -15,15 +15,26 @@
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.application.review.query import QueryReviewUseCase
+from app.application.standard.switch import SwitchStandardUseCase
 from app.core import permissions as P
 from app.core.security import Session
-from app.dependencies import Container, get_audit_logger, get_container, require_permission
+from app.dependencies import (
+    Container,
+    get_audit_logger,
+    get_container,
+    get_query_review_uc,
+    get_switch_standard_uc,
+    require_permission,
+)
 from app.domain.audit.entities import AuditAction, AuditTarget
 from app.domain.audit.service import AuditLogger, client_ip
 from app.schemas.common import fail, ok
+from app.schemas.review import to_response as review_to_response
+from app.schemas.standard import switch_log_to_response
 
 router = APIRouter(
     prefix="/api/admin",
@@ -338,3 +349,75 @@ def change_processed(
         ip=client_ip(request),
     )
     return ok(message="处理状态已更新")
+
+
+# ---------------------------------------------------------------------------
+# 全库分页列表（管理员数据管理页的四个 tab，TASK-9）
+#
+# 球化记录 / 检测标准两个 tab 直接复用现有接口
+# （/api/spheroidization、/api/standards/history，均支持 include_deleted），
+# 这里只补复核记录、切换记录两个全库列表：
+# - 现有 /api/reviews/{record_id} 只能按单条球化记录查；
+# - 现有 /api/standards/switch-logs 挂的是 page:standard，管理员页只认 action:manage_data。
+# 分页结构与 GET /api/spheroidization 一致：{items, total, page, page_size, has_more}。
+# ---------------------------------------------------------------------------
+
+@router.get("/reviews")
+def list_all_reviews(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=200),
+    include_deleted: bool = Query(False),
+    session: Session = Depends(require_permission(P.ACTION_MANAGE_DATA)),
+    uc: QueryReviewUseCase = Depends(get_query_review_uc),
+):
+    records, total = uc.list_all_page(
+        page, page_size, include_deleted=include_deleted
+    )
+    return ok(
+        {
+            "items": [review_to_response(record) for record in records],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "has_more": page * page_size < total,
+        }
+    )
+
+
+@router.get("/switch-logs")
+def list_all_switch_logs(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=200),
+    include_deleted: bool = Query(False),
+    session: Session = Depends(require_permission(P.ACTION_MANAGE_DATA)),
+    uc: SwitchStandardUseCase = Depends(get_switch_standard_uc),
+):
+    items = []
+    for log, from_standard, to_standard in uc.list_logs(
+        page, page_size, include_deleted=include_deleted
+    ):
+        item = switch_log_to_response(log)
+        # 两条标准的球化时长，前端显示"标准X（Ys）"；
+        # 标准被作废（软删）后 get_by_id 查不到，给 None，前端显示 —。
+        item["from_value"] = (
+            from_standard.standard_spheroidization_time
+            if from_standard is not None
+            else None
+        )
+        item["to_value"] = (
+            to_standard.standard_spheroidization_time
+            if to_standard is not None
+            else None
+        )
+        items.append(item)
+
+    total = uc.count_logs(include_deleted=include_deleted)
+    return ok(
+        {
+            "items": items,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "has_more": page * page_size < total,
+        }
+    )

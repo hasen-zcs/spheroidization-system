@@ -202,6 +202,13 @@ onUnmounted(() => {
         >
           用户管理
         </router-link>
+
+        <router-link
+          v-if="can('action:manage_data')"
+          to="/admin"
+        >
+          数据管理
+        </router-link>
       </nav>
 
       <div class="nav-right">

@@ -309,6 +309,70 @@ def test_include_deleted需要管理权限(env):
 
 
 # ============================================================
+# 全库分页列表（TASK-9 管理员页补的两个接口）
+# ============================================================
+
+def test_全库列表接口权限游客401无权限403(env):
+    client, container, rec = env
+
+    # 游客 → 401
+    assert client.get("/api/admin/reviews").json()["code"] == 401
+    assert client.get("/api/admin/switch-logs").json()["code"] == 401
+
+    # 登录但无 action:manage_data → 403
+    # （page:standard 能进标准页看切换日志，但管理员页只认 action:manage_data）
+    _make_user(container, "worker", ["page:records", "page:standard"])
+    worker = _login(client, "worker")
+    assert client.get("/api/admin/reviews", headers=worker).json()["code"] == 403
+    assert client.get("/api/admin/switch-logs", headers=worker).json()["code"] == 403
+
+
+def test_全库列表include_deleted能拿到已删行(env):
+    client, container, rec = env
+    headers = _login(client, "root")
+    rid = rec.spheroidization_record_id
+
+    # 造一条复核记录 + 一条切换日志
+    rev = client.post(
+        "/api/reviews",
+        json={"spheroidization_record_id": rid, "review_result": "异常", "review_remark": "确认"},
+        headers=headers,
+    ).json()
+    assert rev["code"] == 200
+    rev_id = rev["data"]["id"]
+
+    other = _non_current_standard_id(client, headers)
+    client.post("/api/standards/switch", json={"to_standard_record_id": other, "reason": "回退"}, headers=headers)
+    log_id = client.get("/api/standards/switch-logs", headers=headers).json()["data"]["items"][0]["id"]
+
+    # 两条都软删
+    assert client.post(f"/api/admin/reviews/{rev_id}/delete", json={"reason": "复核作废"}, headers=headers).json()["code"] == 200
+    assert client.post(f"/api/admin/switch-logs/{log_id}/delete", json={"reason": "清理"}, headers=headers).json()["code"] == 200
+
+    # 默认不含已删除行，total 同步归零
+    reviews = client.get("/api/admin/reviews", headers=headers).json()["data"]
+    assert reviews["total"] == 0 and reviews["items"] == []
+    logs = client.get("/api/admin/switch-logs", headers=headers).json()["data"]
+    assert logs["total"] == 0 and logs["items"] == []
+
+    # include_deleted=true 能拿到，带软删三字段，分页结构对齐 /api/spheroidization
+    inc = client.get("/api/admin/reviews", headers=headers, params={"include_deleted": "true"}).json()["data"]
+    assert set(inc) == {"items", "total", "page", "page_size", "has_more"}
+    assert inc["total"] == 1
+    assert inc["items"][0]["id"] == rev_id
+    assert inc["items"][0]["deleted_at"] is not None
+    assert inc["items"][0]["deleted_by"] == "root"
+    assert inc["items"][0]["delete_reason"] == "复核作废"
+
+    inc_logs = client.get("/api/admin/switch-logs", headers=headers, params={"include_deleted": "true"}).json()["data"]
+    assert set(inc_logs) == {"items", "total", "page", "page_size", "has_more"}
+    assert inc_logs["total"] == 1
+    assert inc_logs["items"][0]["id"] == log_id
+    assert inc_logs["items"][0]["deleted_by"] == "root"
+    assert inc_logs["items"][0]["delete_reason"] == "清理"
+
+
+# ============================================================
 # 审计 + 幂等
 # ============================================================
 

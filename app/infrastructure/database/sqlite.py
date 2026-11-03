@@ -442,6 +442,33 @@ class SqliteReviewRepository(ReviewRepository):
         ).fetchall()
         return [self._to_entity(row) for row in rows]
 
+    def list_page(
+        self,
+        offset: int,
+        limit: int,
+        include_deleted: bool = False,
+    ) -> List[ReviewRecord]:
+        """分页查全库复核记录，按主键倒序，最新的在最前面。默认不含已软删除。"""
+        where = "" if include_deleted else " WHERE deleted_at IS NULL"
+        rows = self._conn.execute(
+            f"""
+            SELECT * FROM {self._table_name}
+              {where}
+              ORDER BY {self._pk_column} DESC
+              LIMIT ? OFFSET ?
+            """,
+            (limit, offset),
+        ).fetchall()
+        return [self._to_entity(row) for row in rows]
+
+    def count(self, include_deleted: bool = False) -> int:
+        """统计复核记录条数，给全库分页列表的 total 用。"""
+        where = "" if include_deleted else " WHERE deleted_at IS NULL"
+        row = self._conn.execute(
+            f"SELECT COUNT(*) FROM {self._table_name}{where}"
+        ).fetchone()
+        return int(row[0])
+
     def get_latest_results(self, spheroid_ids: list[int]) -> dict[int, int]:
         if not spheroid_ids:
             return {}
@@ -622,12 +649,20 @@ class SqliteStandardSwitchLogRepository(StandardSwitchLogRepository):
             f"""
             SELECT * FROM {self._table_name}
              {where}
-             ORDER BY {self._pk_column} DESC
-             LIMIT ? OFFSET ?
+              ORDER BY {self._pk_column} DESC
+              LIMIT ? OFFSET ?
             """,
             (limit, offset),
         ).fetchall()
         return [self._to_entity(row) for row in rows]
+
+    def count(self, include_deleted: bool = False) -> int:
+        """统计切换日志条数，给全库分页列表的 total 用。"""
+        where = "" if include_deleted else " WHERE deleted_at IS NULL"
+        row = self._conn.execute(
+            f"SELECT COUNT(*) FROM {self._table_name}{where}"
+        ).fetchone()
+        return int(row[0])
 
 
 class SqliteUserRepository(UserAccountRepository):

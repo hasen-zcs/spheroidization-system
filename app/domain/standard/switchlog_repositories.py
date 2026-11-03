@@ -30,13 +30,23 @@ class StandardSwitchLogRepository(ABC):
         self,
         offset: int = 0,
         limit: int = 100,
+        include_deleted: bool = False,
     ) -> list[StandardSwitchLog]:
         """
         分页查切换日志，按 switch_log_id 倒序，最新的在最前面。
 
         :param offset: 跳过前几条
         :param limit: 最多返回几条
+        :param include_deleted: 管理员"看已删除"用，默认 False（不含已软删除）
         :return: 日志实体列表，无数据返回空列表
-        场景：标准页面的"切换记录"列表。
+        场景：标准页面的"切换记录"列表、管理员数据管理页。
+        """
+        ...
+
+    @abstractmethod
+    def count(self, include_deleted: bool = False) -> int:
+        """
+        统计切换日志条数，给全库分页列表的 total 用。
+        :param include_deleted: 是否计入已软删除的行
         """
         ...
