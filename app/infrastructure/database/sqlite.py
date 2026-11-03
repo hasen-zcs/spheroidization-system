@@ -214,9 +214,15 @@ class SqliteSpheroidizationRepository(SpheroidizationRepository):
         return self._to_entity(row)
 
     def list_all(self) -> List[SpheroidizationRecord]:
-        """查全部记录，无数据返回空列表。"""
+        """查全部记录，无数据返回空列表。
+
+        按检测时间升序：这是给 CSV 导出/全量拉取用的，按时间正序是导出惯例。
+        补录会让主键晚于检测时间，光按主键排会乱序；
+        检测时间相同的按主键升序兜底，顺序稳定可复现。
+        """
         rows = self._conn.execute(
-            f"SELECT * FROM {self._table_name} ORDER BY {self._pk_column}"
+            f"SELECT * FROM {self._table_name}"
+            f" ORDER BY detection_time ASC, {self._pk_column} ASC"
         ).fetchall()
         return [self._to_entity(row) for row in rows]
 
@@ -225,12 +231,15 @@ class SqliteSpheroidizationRepository(SpheroidizationRepository):
 
         该字段可为空，SQL 里 NULL = 1 不成立，空值自然被排除，
         正好符合"没判定过就不算异常"，不用额外写 IS NOT NULL。
+
+        跟分页列表同一套时间排序：检测时间降序（最新在前），
+        检测时间相同的按主键降序兜底。
         """
         rows = self._conn.execute(
             f"""
             SELECT * FROM {self._table_name}
              WHERE spheroidization_abnormal = 1
-             ORDER BY {self._pk_column}
+             ORDER BY detection_time DESC, {self._pk_column} DESC
             """
         ).fetchall()
         return [self._to_entity(row) for row in rows]
@@ -243,10 +252,16 @@ class SqliteSpheroidizationRepository(SpheroidizationRepository):
         processed: bool | None = None,
     ) -> List[SpheroidizationRecord]:
         where, params = self._where_clause(abnormal, processed)
+        # 按检测时间降序（最新在前），检测时间相同的再按主键降序：
+        # 补录/回补的历史数据主键晚于检测时间（如 11-03 补录 10-30 的炉次），
+        # 光按主键排会让旧时间记录顶在列表最前，看起来"表是乱的"。
+        # 主键做次级排序键，同一时刻多条时顺序稳定，分页翻页不漂移。
+        # detection_time 是 TEXT（YYYY-MM-DD HH:MM:SS.fff，NOT NULL），
+        # 字符串序就是时间序，直接排即可。
         rows = self._conn.execute(
             f"""
             SELECT * FROM {self._table_name}{where}
-            ORDER BY {self._pk_column} DESC
+            ORDER BY detection_time DESC, {self._pk_column} DESC
             LIMIT ? OFFSET ?
             """,
             (*params, limit, offset),
