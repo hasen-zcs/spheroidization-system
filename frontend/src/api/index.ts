@@ -36,8 +36,9 @@ export interface SpheroidizationRecord {
   temperature: number | null
   temperature_time: string | null
   spheroidization_wire_entry_start_time: string
-  spheroidization_wire_entry_end_time: string
-  spheroidization_wire_entry_total_duration: number
+  // 进线结束 / 总时长可为空（PLC 采不到时为空），display() 兜底成 —
+  spheroidization_wire_entry_end_time: string | null
+  spheroidization_wire_entry_total_duration: number | null
   spheroidization_weight: number
 
   processed: boolean
@@ -109,8 +110,9 @@ export interface CreateSpheroidizationInput {
   temperature?: number | null
   temperature_time?: string | null
   spheroidization_wire_entry_start_time: string
-  spheroidization_wire_entry_end_time: string
-  spheroidization_wire_entry_total_duration: number
+  // 进线结束 / 总时长可空（PLC 采不到时上游发 null，空着入库不丢炉）
+  spheroidization_wire_entry_end_time: string | null
+  spheroidization_wire_entry_total_duration: number | null
   spheroidization_weight: number
   spheroidization_image?: string | null
 }

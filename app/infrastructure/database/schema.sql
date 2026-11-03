@@ -30,8 +30,8 @@ CREATE TABLE SpheroidizationRecord (
 	processed_at TEXT,-- 人工处理时间
 	processed_by TEXT,-- 处理人
 	spheroidization_wire_entry_start_time TEXT NOT NULL,-- 进线开始时间
-	spheroidization_wire_entry_end_time TEXT NOT NULL,-- 进线结束时间
-	spheroidization_wire_entry_total_duration REAL NOT NULL,-- 进线总时长
+	spheroidization_wire_entry_end_time TEXT,-- 进线结束时间（PLC 采不到时为空）
+	spheroidization_wire_entry_total_duration REAL,-- 进线总时长（PLC 采不到时为空）
 	spheroidization_weight REAL NOT NULL,-- 重量
 	spheroidization_image BLOB,-- 图片二进制数据
 	CHECK((processed = 1 AND processed_at IS NOT NULL AND processed_by IS NOT NULL)OR(processed = 0 AND processed_at IS NULL AND processed_by IS NULL)),

@@ -18,6 +18,8 @@ SQLite 不能直接删列、也不能改 NOT NULL，只能「建新表 → 拷�
 3. 主表重建：删掉温度两列（数据先搬走）、放开 3 个 NOT NULL、补 2 个异常列
 4. 老记录里的温度搬进 TemperatureRecord（gun_no=0 = 人工/历史数据，来源不明）
 5. 迁移后核对行数，并调用 verify_schema 自检
+6. v5（2026-11-03）：进线结束时间/进线总时长两列还带 NOT NULL 的库
+   （即已迁到 v4 的老库）同样走主表重建路径放开，重建逻辑复用第 3 条那套
 
 用法
 ----
@@ -145,6 +147,36 @@ V3_TABLES = ("UploadLedger", "FlashSegment")
 # 所以也算"没迁完"，走"只加表"分支补建。
 V4_TABLES = ("AuditLog",)
 
+# v5（2026-11-03）：进线结束时间 / 进线总时长放宽为可空。
+# 迁到 v4 的库列已经齐全，但这俩列还是 NOT NULL——PLC 采不到喂丝结束时
+# 上游发 null 会被 422 整条拒掉，炉次直接丢。必须重建主表放开这两列。
+NULLABLE_RELAX_COLUMNS = (
+    "spheroidization_wire_entry_end_time",
+    "spheroidization_wire_entry_total_duration",
+)
+
+
+def _needs_nullable_relax(conn) -> bool:
+    """v5：主表进线两列是否仍带 NOT NULL。
+
+    读 sqlite_master 里 SpheroidizationRecord 的建表 DDL，
+    只要其中一列后面还跟着 NOT NULL 就返回 True。
+    这样「列齐全但约束没放开」的老库不会被 _is_migrated 放过，
+    会进 migrate() 的 needs_rebuild，走既有的安全重建路径
+    （新表 DDL 取自改后的 schema.sql，天然已是可空）。
+    重建后 DDL 里不再有 NOT NULL，再跑一次即判「已迁移」，幂等成立。
+    """
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+        (MAIN_TABLE,),
+    ).fetchone()
+    ddl = row[0] if row and row[0] else ""
+    for col in NULLABLE_RELAX_COLUMNS:
+        m = re.search(rf"\b{col}\b[^,\n]*", ddl)
+        if m and re.search(r"\bNOT\s+NULL\b", m.group(0), re.I):
+            return True
+    return False
+
 
 def _is_migrated(conn) -> bool:
     tables = _tables(conn)
@@ -156,7 +188,9 @@ def _is_migrated(conn) -> bool:
     # 缺 v3 表也算"没迁完"：主表不用重建，走"只加表"分支
     has_v3 = set(V3_TABLES) <= tables
     has_v4 = set(V4_TABLES) <= tables
-    return has_new_cols and no_old_cols and has_v3 and has_v4
+    # v5：进线两列还带 NOT NULL 也算"没迁完"，必须重建主表放开
+    relaxed = not _needs_nullable_relax(conn)
+    return has_new_cols and no_old_cols and has_v3 and has_v4 and relaxed
 
 
 def _backup(db_path: Path) -> Path:
@@ -203,6 +237,8 @@ def migrate(db_path: Path, dry_run: bool = False) -> int:
         needs_rebuild = (
             bool(set(OLD_ONLY_COLUMNS) & set(old_cols))
             or not ({"abnormal_type", "abnormal_reason"} <= set(old_cols))
+            # v5：列齐全但进线两列还 NOT NULL → 走同一套重建（行数校验+自检都在）
+            or _needs_nullable_relax(conn)
         )
         if not needs_rebuild:
             conn.isolation_level = None

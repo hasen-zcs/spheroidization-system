@@ -22,15 +22,18 @@ class SpheroidizationRecord:
     spheroidization_start_time: str | None
     spheroidization_end_time: str | None
     actual_spheroidization_time: float | None
-    # 机器检测的物性数据。表上 NOT NULL，必填。
+    # 机器检测的物性数据。进线开始时间和重量表上 NOT NULL，必填；
+    # 进线结束时间和总时长可空（PLC 采不到喂丝结束信号时为空，数据缺口不是异常）。
     # 温度已经不在这张表里了，独立成 TemperatureRecord，
     # 因为一根测温枪一次测量对应多条球化记录，塞进主表会重复存。
     spheroidization_wire_entry_start_time: str
-    spheroidization_wire_entry_end_time: str
-    spheroidization_wire_entry_total_duration: float
     spheroidization_weight: float
     # 建这条记录那一刻的标准球化时间（快照）
     standard_spheroidization_time: float
+    # 进线结束 / 进线总时长可空：PLC 偶尔采不到「喂丝结束」信号，
+    # 缺了就空着入库（NULL 原样存，不许填占位值），炉次不能因此丢。
+    spheroidization_wire_entry_end_time: str | None = None
+    spheroidization_wire_entry_total_duration: float | None = None
     # 机器判定球化是否异常：0 正常 / 1 异常，可为空
     spheroidization_abnormal: int | None = None
     # 异常分类：1 进站未球化 / 2 球化线滑动、进线提前中止 / 3 超过标准 / 4 低于标准

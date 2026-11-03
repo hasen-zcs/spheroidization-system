@@ -97,10 +97,12 @@ class SpheroidizationCreateRequest(BaseModel):
     gun_no: int = 0
 
     # 物性数据，全部来自上游推送，本系统只存储、不做任何运算。
-    # 表上这几列都是 NOT NULL，所以这里也都是必填——上游少发一个，整条记录会被拒。
+    # 进线开始时间和重量表上 NOT NULL，必填——上游少发一个，整条记录会被拒。
+    # 进线结束时间和总时长可空：PLC 采不到「喂丝结束」信号时上游给 null，
+    # 缺了就空着入库，炉次不能因为这两个字段丢。
     spheroidization_wire_entry_start_time: str
-    spheroidization_wire_entry_end_time: str
-    spheroidization_wire_entry_total_duration: float
+    spheroidization_wire_entry_end_time: str | None = None
+    spheroidization_wire_entry_total_duration: float | None = None
     spheroidization_weight: float
 
     # 图片二进制。JSON 里按 base64 字符串传，下面那个校验器负责解码。
@@ -247,8 +249,9 @@ class SpheroidizationResponse(BaseModel):
     abnormal_reason: str | None = None
 
     spheroidization_wire_entry_start_time: str
-    spheroidization_wire_entry_end_time: str
-    spheroidization_wire_entry_total_duration: float
+    # 进线结束 / 总时长可为空（PLC 采不到时为空），前端显示「—」
+    spheroidization_wire_entry_end_time: str | None = None
+    spheroidization_wire_entry_total_duration: float | None = None
     spheroidization_weight: float
 
     # 温度已经从主表拆出去了，这里返回的是关联到的那条测温读数
