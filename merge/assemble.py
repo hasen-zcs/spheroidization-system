@@ -211,6 +211,22 @@ def build_payload_from_heat(record: dict, temperature: Optional[dict], device_id
     if image:
         payload["spheroidization_image"] = _strip_data_uri(image)
 
+    # 进线结束/时长为 null（PLC 没采到喂丝结束，回捞后仍缺）→ 按类型 2 记异常。
+    # 原 type 0/None → 改 2 + 写 reason；原 type 非 0 → 保持 type + reason 追加。
+    if (
+        payload["spheroidization_wire_entry_end_time"] is None
+        or payload["spheroidization_wire_entry_total_duration"] is None
+    ):
+        missing_reason = "进线结束时间缺失（PLC 未采集到喂丝结束）"
+        current_type = payload.get("abnormal_type")
+        if current_type in (0, None):
+            payload["abnormal_type"] = 2
+            payload["abnormal_reason"] = missing_reason
+        else:
+            old = payload.get("abnormal_reason")
+            payload["abnormal_reason"] = (str(old) + "；" if old else "") + missing_reason
+        payload["spheroidization_abnormal"] = abnormal_flag(payload["abnormal_type"])
+
     return payload
 
 

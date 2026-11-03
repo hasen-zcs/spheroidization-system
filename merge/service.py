@@ -489,8 +489,11 @@ class MergeService:
                 note = plc_backfill_note(row["body"])
                 if note:
                     error += f"｜{note}"
+                # 死信存**完整** body：这是唯一留存的报文副本，[:4000] 会把带图片的
+                # payload 在 base64 中间截断成坏 JSON（2026-11-03 heat:389 实锤），
+                # 导致事后补录/分析都解析不了。死信罕见（天级几条），体积不是问题。
                 self.state.dead_letter(
-                    sha, "upload", row["external_id"], row["body"][:4000], error,
+                    sha, "upload", row["external_id"], row["body"], error,
                 )
                 stats["dead"] += 1
                 self.log(

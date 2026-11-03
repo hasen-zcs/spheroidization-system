@@ -9,14 +9,24 @@ import {
 import type { ReportSummary } from "../api"
 import { ABNORMAL_TYPE_LABELS } from "../constants"
 
-function today(): string {
-  const d = new Date()
+function formatDate(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0")
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
-// 默认区间：今天 ~ 今天
-const start = ref(today())
+function today(): string {
+  return formatDate(new Date())
+}
+
+// 今天往前推 n 天（与 today() 同格式）
+function daysAgo(n: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() - n)
+  return formatDate(d)
+}
+
+// 默认区间：近 30 天（今天往前推 29 天 ~ 今天）
+const start = ref(daysAgo(29))
 const end = ref(today())
 // 类型筛选只作用于 CSV 导出（后端 summary 不支持 type 参数）
 const typeFilter = ref<number | null>(null)
@@ -189,7 +199,12 @@ const trendChart = computed(() => {
       label: row.date.slice(5),
     }))
     .filter((tick) => tick.index % labelStep === 0)
-  return { width, height, pad, points, yTicks, xTicks }
+  // 单点兜底：SVG polyline 单点画不出线，补一个圆点
+  const single =
+    rows.length === 1
+      ? { x: pointX(0), y: pointY(rows[0].abnormal_rate) }
+      : null
+  return { width, height, pad, points, yTicks, xTicks, single }
 })
 
 onMounted(() => {
@@ -521,6 +536,13 @@ onMounted(() => {
             fill="none"
             stroke="#cf1322"
             stroke-width="2"
+          />
+          <circle
+            v-if="trendChart.single"
+            :cx="trendChart.single.x"
+            :cy="trendChart.single.y"
+            r="4"
+            fill="#cf1322"
           />
         </svg>
       </section>
