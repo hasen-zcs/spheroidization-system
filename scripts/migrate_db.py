@@ -20,6 +20,10 @@ SQLite 不能直接删列、也不能改 NOT NULL，只能「建新表 → 拷�
 5. 迁移后核对行数，并调用 verify_schema 自检
 6. v5（2026-11-03）：进线结束时间/进线总时长两列还带 NOT NULL 的库
    （即已迁到 v4 的老库）同样走主表重建路径放开，重建逻辑复用第 3 条那套
+7. v6（2026-11-03）：软删除三列。SpheroidizationRecord / StandardRecord /
+   StandardSwitchLogs / ReviewRecord 各加 deleted_at / deleted_by /
+   delete_reason（全部可空 TEXT）。用 ALTER TABLE ADD COLUMN 补，不重建表、
+   不动老数据（老数据 deleted_at 全为 NULL），加完做行数校验。
 
 用法
 ----
@@ -155,6 +159,16 @@ NULLABLE_RELAX_COLUMNS = (
     "spheroidization_wire_entry_total_duration",
 )
 
+# v6（2026-11-03）：软删除三列。四张表各加，全部可空 TEXT。
+# 用 ALTER TABLE ADD COLUMN 补，不重建表（本库是 STRICT 表，加可空 TEXT 列合法）。
+SOFT_DELETE_TABLES = (
+    "SpheroidizationRecord",
+    "StandardRecord",
+    "StandardSwitchLogs",
+    "ReviewRecord",
+)
+SOFT_DELETE_COLUMNS = ("deleted_at", "deleted_by", "delete_reason")
+
 
 def _needs_nullable_relax(conn) -> bool:
     """v5：主表进线两列是否仍带 NOT NULL。
@@ -178,6 +192,39 @@ def _needs_nullable_relax(conn) -> bool:
     return False
 
 
+def _has_v6_columns(conn) -> bool:
+    """v6：四张表是否都已带软删除三列。缺任一表/任一一列都算"没迁完"。"""
+    tables = _tables(conn)
+    for table in SOFT_DELETE_TABLES:
+        if table not in tables:
+            return False
+        cols = set(_columns(conn, table))
+        if not set(SOFT_DELETE_COLUMNS) <= cols:
+            return False
+    return True
+
+
+def _ensure_v6_columns(conn) -> None:
+    """v6：四张表补软删除三列（ALTER ADD COLUMN，不重建，可重复跑）。
+
+    列已存在就跳过（查 PRAGMA table_info）。ALTER ADD COLUMN 本身不改行数，
+    这里仍做一次行数校验兜底：万一有异常，宁可抛错回滚，也不让静默数据差异溜过去。
+    """
+    for table in SOFT_DELETE_TABLES:
+        existing = set(_columns(conn, table))
+        for col in SOFT_DELETE_COLUMNS:
+            if col in existing:
+                continue
+            before = conn.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
+            print(f"  加列 {table}.{col}")
+            conn.execute(f'ALTER TABLE "{table}" ADD COLUMN {col} TEXT')
+            after = conn.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
+            if before != after:
+                raise RuntimeError(
+                    f"{table} 行数对不上：加列前 {before}，加列后 {after}，已回滚"
+                )
+
+
 def _is_migrated(conn) -> bool:
     tables = _tables(conn)
     if MAIN_TABLE not in tables:
@@ -190,7 +237,9 @@ def _is_migrated(conn) -> bool:
     has_v4 = set(V4_TABLES) <= tables
     # v5：进线两列还带 NOT NULL 也算"没迁完"，必须重建主表放开
     relaxed = not _needs_nullable_relax(conn)
-    return has_new_cols and no_old_cols and has_v3 and has_v4 and relaxed
+    # v6：软删除三列缺了也算"没迁完"，走"只加列"分支补（不重建主表）
+    has_v6 = _has_v6_columns(conn)
+    return has_new_cols and no_old_cols and has_v3 and has_v4 and relaxed and has_v6
 
 
 def _backup(db_path: Path) -> Path:
@@ -251,6 +300,7 @@ def migrate(db_path: Path, dry_run: bool = False) -> int:
                     print(f"  建表 {name}")
                 conn.execute(stmt)
             _ensure_v2_columns(conn)
+            _ensure_v6_columns(conn)
             conn.execute("COMMIT")
             from app.infrastructure.database.connection import verify_schema
             verify_schema(conn)
@@ -328,6 +378,10 @@ def migrate(db_path: Path, dry_run: bool = False) -> int:
             )
             inserted += 1
         print(f"  已写入 TemperatureRecord：{inserted} 条（gun_no=0 表示历史/人工来源）")
+
+        # 6) v6 软删除三列。重建分支里主表/新表 DDL 已含这三列，
+        # 这里再兜底一次：万一某张老表缺列（幂等安全），一并补齐。
+        _ensure_v6_columns(conn)
 
         conn.execute("COMMIT")
         conn.execute("PRAGMA foreign_keys = ON")

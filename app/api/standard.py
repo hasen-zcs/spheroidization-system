@@ -20,7 +20,7 @@ from app.dependencies import (
 )
 from app.domain.audit.entities import AuditAction, AuditTarget
 from app.domain.audit.service import AuditLogger, client_ip
-from app.schemas.common import ok
+from app.schemas.common import fail, ok
 from app.schemas.standard import (
     StandardCreateRequest,
     StandardSwitchRequest,
@@ -107,13 +107,27 @@ def get_current_standard(
 
 @router.get("/history")
 def get_standard_history(
+    include_deleted: bool = Query(False),
     session: Session = Depends(require_login),
     uc: QueryStandardUseCase = Depends(get_query_standard_uc),
 ):
     # 登录即可，不挂 page:standard：监控页的切换卡片要及时列出历史标准，
     # 而浇筑工只有 action:switch_standard、没有 page:standard，
     # 挂页面权限会把那张卡片直接打死。游客依然看不到（需要登录）。
-    return ok([to_response(standard) for standard in uc.get_history()])
+    # 看已删除标准是管理动作：要 action:manage_data，无权限 403。
+    # 这里已经 require_login，session 必非空，只判权限。
+    if (
+        include_deleted
+        and not session.is_admin
+        and P.ACTION_MANAGE_DATA not in session.permissions
+    ):
+        return fail("没有该操作权限", 403)
+    return ok(
+        [
+            to_response(standard)
+            for standard in uc.get_history(include_deleted=include_deleted)
+        ]
+    )
 
 
 @router.post("/switch")
@@ -150,13 +164,23 @@ def switch_standard(
 def list_switch_logs(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=200),
+    include_deleted: bool = Query(False),
     session: Session = Depends(require_permission(P.PAGE_STANDARD)),
     uc: SwitchStandardUseCase = Depends(get_switch_standard_uc),
 ):
     # 能进标准页的人就能看切换历史；action:switch_standard 只管"能不能切"。
     # 两个权限分开，不要合二为一——浇筑工能切但不该翻全厂的切换账。
+    # 看已删除切换记录是管理动作：额外要 action:manage_data，无权限 403。
+    if (
+        include_deleted
+        and not session.is_admin
+        and P.ACTION_MANAGE_DATA not in session.permissions
+    ):
+        return fail("没有该操作权限", 403)
     items = []
-    for log, from_standard, to_standard in uc.list_logs(page, page_size):
+    for log, from_standard, to_standard in uc.list_logs(
+        page, page_size, include_deleted=include_deleted
+    ):
         item = switch_log_to_response(log)
         # 结构化字段给前端自己排版，整句文案给前端直接显示
         item["from_standard"] = (

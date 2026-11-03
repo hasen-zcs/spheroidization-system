@@ -17,6 +17,7 @@ from app.api import temperature
 from app.api import user
 from app.api import video
 from app.api import audit
+from app.api import admin
 from app.core.exceptions import BusinessException
 from app.dependencies import get_container
 
@@ -60,6 +61,7 @@ app.include_router(temperature.router)
 app.include_router(user.router)
 app.include_router(video.router)
 app.include_router(audit.router)
+app.include_router(admin.router)
 
 
 @app.exception_handler(BusinessException)

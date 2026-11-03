@@ -57,3 +57,7 @@ class SpheroidizationRecord:
     # abnormal_type / abnormal_reason 之所以带 = None 放在 spheroidization_abnormal 后面，
     # 也是为了这个顺序——放到前面会 TypeError: non-default argument follows default argument。
     spheroidization_record_id: int | None = None
+    # v6 软删除三列：deleted_at 为 NULL 即未删除，读取路径默认过滤。
+    deleted_at: str | None = None
+    deleted_by: str | None = None
+    delete_reason: str | None = None

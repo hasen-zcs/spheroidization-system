@@ -53,4 +53,8 @@ def to_response(review: ReviewRecord) -> dict:
         "reviewer": review.reviewer,
         "review_remark": review.review_remark,
         "reviewed_at": review.reviewed_at,
+        # v6 软删除信息：未删除时为 None
+        "deleted_at": review.deleted_at,
+        "deleted_by": review.deleted_by,
+        "delete_reason": review.delete_reason,
     }

@@ -17,6 +17,15 @@ class AuditAction:
     CREATE_USER = "create_user"  # 建账号
     CHANGE_PASSWORD = "change_password"  # 重置密码
     GRANT_PERMISSION = "grant_permission"  # 权限变更（整体覆盖）
+    DELETE_RECORD = "delete_record"  # 软删球化记录
+    DELETE_STANDARD = "delete_standard"  # 软删检测标准
+    DELETE_SWITCH_LOG = "delete_switch_log"  # 软删标准切换记录
+    DELETE_REVIEW = "delete_review"  # 软删复核记录
+    RESTORE_RECORD = "restore_record"  # 恢复球化记录
+    RESTORE_STANDARD = "restore_standard"  # 恢复检测标准
+    RESTORE_SWITCH_LOG = "restore_switch_log"  # 恢复标准切换记录
+    RESTORE_REVIEW = "restore_review"  # 恢复复核记录
+    CHANGE_PROCESSED = "change_processed"  # 改人工处理状态
 
 
 class AuditTarget:
@@ -26,6 +35,7 @@ class AuditTarget:
     SPHEROIDIZATION_RECORD = "spheroidization_record"
     REVIEW = "review"
     USER = "user"
+    SWITCH_LOG = "switch_log"
 
 
 @dataclass

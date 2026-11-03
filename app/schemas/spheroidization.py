@@ -344,6 +344,11 @@ def to_response(
             if review_result is None
             else ("异常" if review_result == 1 else "正常")
         ),
+        # v6 软删除信息：未删除时三项均为 None；管理员带 include_deleted=true
+        # 拉列表时靠这三项展示"谁、何时、为什么删的"。
+        "deleted_at": record.deleted_at,
+        "deleted_by": record.deleted_by,
+        "delete_reason": record.delete_reason,
     }
 
     if with_image:

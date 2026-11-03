@@ -202,6 +202,10 @@ def test_记录创建列表详情图片处置复核(env):
         "reviewer",
         "review_remark",
         "reviewed_at",
+        # v6 软删除信息（未删除时三项均为 None）
+        "deleted_at",
+        "deleted_by",
+        "delete_reason",
     }
 
     # 详情里回填最新复核结论

@@ -29,3 +29,7 @@ class StandardRecord:
     # 主键，由数据库自增分配（AUTOINCREMENT），调用方不传。
     # 放在最后：dataclass 要求有默认值的字段必须排在没默认值的字段后面。
     standard_record_id: int | None = None
+    # v6 软删除三列：deleted_at 为 NULL 即未删除，读取路径默认过滤。
+    deleted_at: str | None = None
+    deleted_by: str | None = None
+    delete_reason: str | None = None

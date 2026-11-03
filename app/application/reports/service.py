@@ -199,11 +199,11 @@ class ReportsService:
                        COUNT(*) AS total,
                        COALESCE(SUM(CASE WHEN COALESCE(s.abnormal_type, 0) <> 0 THEN 1 ELSE 0 END), 0) AS abnormal,
                        AVG(s.actual_spheroidization_time) AS avg_actual
-                FROM SpheroidizationRecord s
-                JOIN StandardRecord std ON std.standard_record_id = s.standard_record_id
-                {where}
-                GROUP BY s.standard_record_id
-                ORDER BY s.standard_record_id
+                 FROM SpheroidizationRecord s
+                 JOIN StandardRecord std ON std.standard_record_id = s.standard_record_id
+                 {where.replace("deleted_at IS NULL", "s.deleted_at IS NULL", 1)}
+                 GROUP BY s.standard_record_id
+                 ORDER BY s.standard_record_id
                 """,
                 params,
             )
@@ -355,6 +355,9 @@ class ReportsService:
     ) -> tuple[str, list]:
         conditions: list[str] = []
         params: list = []
+        # 软删除：报表只统计未删除的记录，deleted_at IS NULL 永远是基础条件。
+        # 它永远在条件里，所以下面不再有"空条件返回空串"的分支。
+        conditions.append("deleted_at IS NULL")
         if start_bound:
             conditions.append("detection_time >= ?")
             params.append(start_bound)
@@ -364,8 +367,6 @@ class ReportsService:
         if type_ is not None:
             conditions.append("COALESCE(abnormal_type, 0) = ?")
             params.append(type_)
-        if not conditions:
-            return "", params
         return " WHERE " + " AND ".join(conditions), params
 
     @staticmethod
@@ -393,6 +394,7 @@ class ReportsService:
             SELECT spheroidization_record_id, review_result
             FROM ReviewRecord
             WHERE spheroidization_record_id IN ({placeholders})
+              AND deleted_at IS NULL
             ORDER BY reviewed_at DESC, review_record_id DESC
             """,
             record_ids,

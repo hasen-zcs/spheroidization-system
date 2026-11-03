@@ -14,9 +14,14 @@ class QueryReviewUseCase:
     def __init__(self, review_repo: ReviewRepository):
         self.review_repo = review_repo
 
-    def execute(self, spheroid_id: int) -> List[ReviewRecord]:
+    def execute(
+        self, spheroid_id: int, include_deleted: bool = False
+    ) -> List[ReviewRecord]:
         """
         :param spheroid_id: 球化检测记录主键，不是复核记录的主键
+        :param include_deleted: 管理员恢复页用，默认 False（不含已软删除）
         :return: 复核实体列表，无复核记录返回空列表
         """
-        return self.review_repo.list_by_spheroid_id(spheroid_id)
+        return self.review_repo.list_by_spheroid_id(
+            spheroid_id, include_deleted=include_deleted
+        )

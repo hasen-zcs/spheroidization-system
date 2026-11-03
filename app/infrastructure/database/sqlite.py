@@ -68,9 +68,13 @@ class SqliteSpheroidizationRepository(SpheroidizationRepository):
     def _where_clause(
         abnormal: bool | None = None,
         processed: bool | None = None,
+        include_deleted: bool = False,
     ) -> tuple[str, list[int]]:
         conditions: list[str] = []
         params: list[int] = []
+        # 默认过滤软删除；include_deleted 只给管理员"看已删除"用（见 API 层权限校验）
+        if not include_deleted:
+            conditions.append("deleted_at IS NULL")
         if abnormal is not None:
             if abnormal:
                 conditions.append("spheroidization_abnormal = 1")
@@ -204,9 +208,10 @@ class SqliteSpheroidizationRepository(SpheroidizationRepository):
             return self._reload_by_id(record.spheroidization_record_id)
 
     def get_by_id(self, record_id: int) -> Optional[SpheroidizationRecord]:
-        """按主键查单条，查不到返回 None。"""
+        """按主键查单条，查不到返回 None。已软删除的视为不存在。"""
         row = self._conn.execute(
-            f"SELECT * FROM {self._table_name} WHERE {self._pk_column} = ?",
+            f"SELECT * FROM {self._table_name}"
+            f" WHERE {self._pk_column} = ? AND deleted_at IS NULL",
             (record_id,),
         ).fetchone()
         if row is None:
@@ -222,6 +227,7 @@ class SqliteSpheroidizationRepository(SpheroidizationRepository):
         """
         rows = self._conn.execute(
             f"SELECT * FROM {self._table_name}"
+            f" WHERE deleted_at IS NULL"
             f" ORDER BY detection_time ASC, {self._pk_column} ASC"
         ).fetchall()
         return [self._to_entity(row) for row in rows]
@@ -239,6 +245,7 @@ class SqliteSpheroidizationRepository(SpheroidizationRepository):
             f"""
             SELECT * FROM {self._table_name}
              WHERE spheroidization_abnormal = 1
+               AND deleted_at IS NULL
              ORDER BY detection_time DESC, {self._pk_column} DESC
             """
         ).fetchall()
@@ -250,8 +257,9 @@ class SqliteSpheroidizationRepository(SpheroidizationRepository):
         limit: int,
         abnormal: bool | None = None,
         processed: bool | None = None,
+        include_deleted: bool = False,
     ) -> List[SpheroidizationRecord]:
-        where, params = self._where_clause(abnormal, processed)
+        where, params = self._where_clause(abnormal, processed, include_deleted)
         # 按检测时间降序（最新在前），检测时间相同的再按主键降序：
         # 补录/回补的历史数据主键晚于检测时间（如 11-03 补录 10-30 的炉次），
         # 光按主键排会让旧时间记录顶在列表最前，看起来"表是乱的"。
@@ -272,8 +280,9 @@ class SqliteSpheroidizationRepository(SpheroidizationRepository):
         self,
         abnormal: bool | None = None,
         processed: bool | None = None,
+        include_deleted: bool = False,
     ) -> int:
-        where, params = self._where_clause(abnormal, processed)
+        where, params = self._where_clause(abnormal, processed, include_deleted)
         row = self._conn.execute(
             f"SELECT COUNT(*) FROM {self._table_name}{where}",
             params,
@@ -330,7 +339,8 @@ class SqliteStandardRepository(StandardRepository):
 
     def get_by_id(self, standard_id: int) -> Optional[StandardRecord]:
         row = self._conn.execute(
-            f"SELECT * FROM {self._table_name} WHERE {self._pk_column} = ?",
+            f"SELECT * FROM {self._table_name}"
+            f" WHERE {self._pk_column} = ? AND deleted_at IS NULL",
             (standard_id,),
         ).fetchone()
         if row is None:
@@ -345,16 +355,24 @@ class SqliteStandardRepository(StandardRepository):
         应用层优先读取 active_standard.json；只有文件缺失或无效时才使用本条回退。
         """
         row = self._conn.execute(
-            f"SELECT * FROM {self._table_name} ORDER BY {self._pk_column} DESC LIMIT 1"
+            f"SELECT * FROM {self._table_name}"
+            f" WHERE deleted_at IS NULL"
+            f" ORDER BY {self._pk_column} DESC LIMIT 1"
         ).fetchone()
         if row is None:
             return None
         return self._to_entity(row)
 
-    def get_history(self) -> List[StandardRecord]:
-        """查全部标准，含当前和历史，无数据返回空列表。"""
+    def get_history(self, include_deleted: bool = False) -> List[StandardRecord]:
+        """查全部标准，含当前和历史，无数据返回空列表。
+
+        默认不含已软删除；include_deleted 只给管理员恢复页用。
+        """
+        where = "" if include_deleted else " WHERE deleted_at IS NULL"
         rows = self._conn.execute(
-            f"SELECT * FROM {self._table_name} ORDER BY {self._pk_column}"
+            f"SELECT * FROM {self._table_name}"
+            f"{where}"
+            f" ORDER BY {self._pk_column}"
         ).fetchall()
         return [self._to_entity(row) for row in rows]
 
@@ -404,15 +422,20 @@ class SqliteReviewRepository(ReviewRepository):
             review.review_record_id = cursor.lastrowid
         return review
 
-    def list_by_spheroid_id(self, spheroid_id: int) -> List[ReviewRecord]:
+    def list_by_spheroid_id(
+        self, spheroid_id: int, include_deleted: bool = False
+    ) -> List[ReviewRecord]:
         """查某条球化记录的全部复核历史，无记录返回空列表。
 
-        按主键排序就是复核先后顺序。
+        按主键排序就是复核先后顺序。默认不含已软删除；
+        include_deleted 只给管理员恢复页用。
         """
+        deleted_filter = "" if include_deleted else " AND deleted_at IS NULL"
         rows = self._conn.execute(
             f"""
             SELECT * FROM {self._table_name}
              WHERE spheroidization_record_id = ?
+             {deleted_filter}
              ORDER BY {self._pk_column}
             """,
             (spheroid_id,),
@@ -433,6 +456,7 @@ class SqliteReviewRepository(ReviewRepository):
                            MAX(review_record_id) AS latest_review_id
                       FROM {self._table_name}
                      WHERE spheroidization_record_id IN ({placeholders})
+                       AND deleted_at IS NULL
                      GROUP BY spheroidization_record_id
               ) AS latest
                 ON review.review_record_id = latest.latest_review_id
@@ -590,11 +614,14 @@ class SqliteStandardSwitchLogRepository(StandardSwitchLogRepository):
         self,
         offset: int = 0,
         limit: int = 100,
+        include_deleted: bool = False,
     ) -> List[StandardSwitchLog]:
-        """分页查切换日志，倒序返回，最新的在最前面。"""
+        """分页查切换日志，倒序返回，最新的在最前面。默认不含已软删除。"""
+        where = "" if include_deleted else " WHERE deleted_at IS NULL"
         rows = self._conn.execute(
             f"""
             SELECT * FROM {self._table_name}
+             {where}
              ORDER BY {self._pk_column} DESC
              LIMIT ? OFFSET ?
             """,

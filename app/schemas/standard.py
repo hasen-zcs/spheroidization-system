@@ -88,6 +88,10 @@ def to_response(standard: StandardRecord) -> dict:
         "created_at": standard.created_at,
         "created_by": standard.created_by,
         "remark": standard.remark,
+        # v6 软删除信息：未删除时为 None
+        "deleted_at": standard.deleted_at,
+        "deleted_by": standard.deleted_by,
+        "delete_reason": standard.delete_reason,
     }
 
 
@@ -100,4 +104,8 @@ def switch_log_to_response(log: StandardSwitchLog) -> dict:
         "to_standard_record_id": log.to_standard_record_id,
         "operated_by": log.operated_by,
         "reason": log.reason,
+        # v6 软删除信息：未删除时为 None
+        "deleted_at": log.deleted_at,
+        "deleted_by": log.deleted_by,
+        "delete_reason": log.delete_reason,
     }

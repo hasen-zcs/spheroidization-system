@@ -25,6 +25,10 @@ def default_db_path() -> Path:
 DEFAULT_DB_PATH = default_db_path()
 SCHEMA_FILE = Path(__file__).parent / "schema.sql"
 
+# 这三个触发器里的 FROM <表> 是"物理删除后把 AUTOINCREMENT 序列回退到当前
+# 最大 ID"的完整性计算（SELECT MAX(...)），不是业务读路径，所以**不**加
+# deleted_at IS NULL 过滤。本系统改用软删除后，这四张表不再发生物理 DELETE，
+# 触发器实际不会触发，保留它们只是兼容老的物理删除序列回退逻辑。
 SEQUENCE_TRIGGER_SQL = (
     """
     CREATE TRIGGER IF NOT EXISTS standard_sync_sequence
@@ -133,8 +137,16 @@ REQUIRED_TABLES = (
 
 # 升级过表结构的列：老库缺这些列时，任何写入都会 OperationalError，
 # 与其等第一个请求 500，不如启动时直接拒绝。
+# v6：软删除三列缺了，读路径的 deleted_at IS NULL 会报 no such column，
+# 一样要启动即失败，指向迁移脚本。
 REQUIRED_COLUMNS = {
-    "SpheroidizationRecord": ("abnormal_type", "abnormal_reason", "plc_button_time"),
+    "SpheroidizationRecord": (
+        "abnormal_type", "abnormal_reason", "plc_button_time",
+        "deleted_at", "deleted_by", "delete_reason",
+    ),
+    "StandardRecord": ("deleted_at", "deleted_by", "delete_reason"),
+    "StandardSwitchLogs": ("deleted_at", "deleted_by", "delete_reason"),
+    "ReviewRecord": ("deleted_at", "deleted_by", "delete_reason"),
 }
 
 

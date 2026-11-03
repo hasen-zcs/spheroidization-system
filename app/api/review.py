@@ -3,7 +3,7 @@
 只做四件事：收请求 → 转参数 → 调 UseCase → 包响应。
 """
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 
 from app.application.review.create import CreateReviewUseCase
 from app.application.review.query import QueryReviewUseCase
@@ -18,7 +18,7 @@ from app.dependencies import (
 )
 from app.domain.audit.entities import AuditAction, AuditTarget
 from app.domain.audit.service import AuditLogger, client_ip
-from app.schemas.common import ok
+from app.schemas.common import fail, ok
 from app.schemas.review import ReviewCreateRequest, to_response, to_result_int
 
 router = APIRouter(
@@ -64,6 +64,7 @@ def create_review(
 @router.get("/{record_id}")
 def query_reviews(
     record_id: int,
+    include_deleted: bool = Query(False),
     session: Session = Depends(require_login),
     uc: QueryReviewUseCase = Depends(get_query_review_uc),
 ):
@@ -72,4 +73,17 @@ def query_reviews(
     # 挂任何单一页面权限都会挡掉另一边。
     # 游客看不到（异常记录的复核历史不对游客开放）。
     # 一条球化记录可以有多条复核，所以返回列表；没有复核返回空列表
-    return ok([to_response(review) for review in uc.execute(record_id)])
+    # 看已删除复核记录是管理动作：要 action:manage_data，无权限 403。
+    # 已 require_login，session 必非空，只判权限。
+    if (
+        include_deleted
+        and not session.is_admin
+        and P.ACTION_MANAGE_DATA not in session.permissions
+    ):
+        return fail("没有该操作权限", 403)
+    return ok(
+        [
+            to_response(review)
+            for review in uc.execute(record_id, include_deleted=include_deleted)
+        ]
+    )

@@ -5,7 +5,7 @@
 不要改成 Enum 再往库里塞——枚举对象存不进 TEXT 列，取出来还得再映射一次，
 中间任何一处漏了转换，库里的值就和常量对不上了。
 
-一共 9 个：page:* 四个（能进哪些页面）、action:* 五个（能做什么操作）。
+一共 10 个：page:* 四个（能进哪些页面）、action:* 六个（能做什么操作）。
 首页和监控页游客也能进，没有可拦截的对象，所以 page:home、page:monitor
 不设权限点。改这个数量的时候，用户管理页的勾选框要跟着改。
 """
@@ -20,6 +20,7 @@ ACTION_CREATE_STANDARD = "action:create_standard"
 ACTION_REVIEW = "action:review"
 ACTION_PROCESS = "action:process"
 ACTION_MANAGE_USERS = "action:manage_users"
+ACTION_MANAGE_DATA = "action:manage_data"
 
 ALL_PERMISSIONS = frozenset(
     {
@@ -32,6 +33,7 @@ ALL_PERMISSIONS = frozenset(
         ACTION_REVIEW,
         ACTION_PROCESS,
         ACTION_MANAGE_USERS,
+        ACTION_MANAGE_DATA,
     }
 )
 

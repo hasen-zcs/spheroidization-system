@@ -71,6 +71,7 @@ def _page_response(
     page_size: int,
     abnormal: bool | None = None,
     processed: bool | None = None,
+    include_deleted: bool = False,
 ):
     """三条列表接口共用的分页响应,改一处就全生效。
 
@@ -82,6 +83,7 @@ def _page_response(
         page_size=page_size,
         abnormal=abnormal,
         processed=processed,
+        include_deleted=include_deleted,
     )
     latest_reviews = uc.latest_review_results(records)
     temperatures = uc.temperatures_for(records)
@@ -184,6 +186,8 @@ def query_spheroidization(
     page_size: int = Query(20, ge=1, le=200),
     abnormal: bool | None = Query(None),
     processed: bool | None = Query(None),
+    # 管理员看已删除记录（恢复用）。默认 False，业务页行为不变。
+    include_deleted: bool = Query(False),
     session: Session | None = Depends(get_optional_session),
     uc: QuerySpheroidizationUseCase = Depends(get_query_spheroidization_uc),
 ):
@@ -195,12 +199,22 @@ def query_spheroidization(
     if session is None and abnormal:
         return fail("请先登录后查看异常记录", 403)
 
+    # 看已删除记录是管理动作:游客 401、无 action:manage_data 403。
+    # 权限校验必须写在这(参数级),不能靠路由依赖,否则 ?include_deleted=true
+    # 会绕过 require_permission 直接返回已删数据。
+    if include_deleted:
+        if session is None:
+            return fail("请先登录", 401)
+        if not session.is_admin and P.ACTION_MANAGE_DATA not in session.permissions:
+            return fail("没有该操作权限", 403)
+
     return _page_response(
         uc=uc,
         page=page,
         page_size=page_size,
         abnormal=abnormal,
         processed=processed,
+        include_deleted=include_deleted,
     )
 
 

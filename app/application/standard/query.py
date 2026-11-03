@@ -39,6 +39,6 @@ class QueryStandardUseCase:
                 return standard
         return self.standard_repo.get_current()
 
-    def get_history(self) -> List[StandardRecord]:
-        """查全部标准，含当前和历史，无数据返回空列表。"""
-        return self.standard_repo.get_history()
+    def get_history(self, include_deleted: bool = False) -> List[StandardRecord]:
+        """查全部标准，含当前和历史，无数据返回空列表。默认不含已软删除。"""
+        return self.standard_repo.get_history(include_deleted=include_deleted)

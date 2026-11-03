@@ -100,6 +100,7 @@ class SwitchStandardUseCase:
         self,
         page: int,
         page_size: int,
+        include_deleted: bool = False,
     ) -> list[tuple[StandardSwitchLog, StandardRecord | None, StandardRecord | None]]:
         """分页查切换日志，并把每条日志对应的"原标准 / 目标标准"一起取出来。
 
@@ -110,7 +111,9 @@ class SwitchStandardUseCase:
         规则，就得回头挨个改路由。日志量小，逐条单查两次不碍事。
         """
         offset = (page - 1) * page_size
-        logs = self.switch_log_repo.list_all(offset=offset, limit=page_size)
+        logs = self.switch_log_repo.list_all(
+            offset=offset, limit=page_size, include_deleted=include_deleted
+        )
 
         result = []
         for log in logs:

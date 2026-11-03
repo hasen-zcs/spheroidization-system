@@ -2,6 +2,15 @@
 -- 发新的 DDL 时，整份替换这个文件就行
 -- 执行入口在 connection.py 的 create_tables()。
 
+-- ==========================================================
+-- v6（2026-11-03）：软删除 + 处理状态可改
+-- SpheroidizationRecord / StandardRecord / StandardSwitchLogs /
+-- ReviewRecord 四张表各加 deleted_at / deleted_by / delete_reason
+-- 三列（全部可空，NULL=未删除）。老库由 scripts/migrate_db.py
+-- 用 ALTER TABLE ADD COLUMN 补列，不重建、不动老数据（老数据
+-- deleted_at 全为 NULL）。读取路径默认过滤 deleted_at IS NULL。
+-- ==========================================================
+
 CREATE TABLE StandardRecord (
 	standard_record_id INTEGER PRIMARY KEY AUTOINCREMENT,--主键，id自增
 	standard_spheroidization_time REAL NOT NULL CHECK(standard_spheroidization_time > 0),-- 球化时长
@@ -10,7 +19,10 @@ CREATE TABLE StandardRecord (
 	weighing_standard REAL NOT NULL,--称重标准
 	created_at TEXT NOT NULL,-- 创建检测标准时间
 	created_by TEXT NOT NULL,-- 创建人
-	remark TEXT-- 备注
+	remark TEXT,-- 备注
+	deleted_at TEXT,     -- v6 软删除时刻，NULL=未删除
+	deleted_by TEXT,     -- 删除人（登录账号）
+	delete_reason TEXT   -- 删除原因（应用层校验非空）
 ) STRICT;
 
 CREATE TABLE SpheroidizationRecord (
@@ -34,6 +46,9 @@ CREATE TABLE SpheroidizationRecord (
 	spheroidization_wire_entry_total_duration REAL,-- 进线总时长（PLC 采不到时为空）
 	spheroidization_weight REAL NOT NULL,-- 重量
 	spheroidization_image BLOB,-- 图片二进制数据
+	deleted_at TEXT,     -- v6 软删除时刻，NULL=未删除
+	deleted_by TEXT,     -- 删除人（登录账号）
+	delete_reason TEXT,  -- 删除原因（应用层校验非空）
 	CHECK((processed = 1 AND processed_at IS NOT NULL AND processed_by IS NOT NULL)OR(processed = 0 AND processed_at IS NULL AND processed_by IS NULL)),
 	--一条球化记录只允许一次人工处置，处置完成不可逆，不会回退状态。防止出现“状态标记为已处理，但实际上没有处理人、也没有处理时间”或者“状态为未处理，但实际有处理人或时间”的“幽灵数据”
 	FOREIGN KEY (standard_record_id) REFERENCES StandardRecord(standard_record_id) ON DELETE RESTRICT
@@ -47,6 +62,9 @@ CREATE TABLE ReviewRecord (
     review_remark TEXT, -- 复核备注，可为空
     reviewer TEXT NOT NULL, -- 复核人
     reviewed_at TEXT NOT NULL, -- 复核时间
+    deleted_at TEXT,     -- v6 软删除时刻，NULL=未删除
+    deleted_by TEXT,     -- 删除人（登录账号）
+    delete_reason TEXT,  -- 删除原因（应用层校验非空）
     -- 外键约束
     FOREIGN KEY (spheroidization_record_id) REFERENCES SpheroidizationRecord(spheroidization_record_id) ON DELETE RESTRICT
 ) STRICT;
@@ -70,6 +88,9 @@ CREATE TABLE StandardSwitchLogs (
 	to_standard_record_id INTEGER NOT NULL, -- 切到哪一套
 	operated_by TEXT NOT NULL, -- 操作人，取登录账号
 	reason TEXT NOT NULL CHECK(length(trim(reason)) > 0), -- 切换原因，前后不能全是空格
+	deleted_at TEXT,     -- v6 软删除时刻，NULL=未删除
+	deleted_by TEXT,     -- 删除人（登录账号）
+	delete_reason TEXT,  -- 删除原因（应用层校验非空）
 	-- RESTRICT 双向：被切换记录引用过的标准不许删，否则日志里的“从哪套切到哪套”就断链了。
 	FOREIGN KEY (from_standard_record_id) REFERENCES StandardRecord(standard_record_id) ON DELETE RESTRICT,
 	FOREIGN KEY (to_standard_record_id) REFERENCES StandardRecord(standard_record_id) ON DELETE RESTRICT
