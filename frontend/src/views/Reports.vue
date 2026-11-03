@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue"
 
-import { downloadReportCsv, getReportSummary } from "../api"
+import {
+  downloadReportCsv,
+  downloadReportExcel,
+  getReportSummary,
+} from "../api"
 import type { ReportSummary } from "../api"
 import { ABNORMAL_TYPE_LABELS } from "../constants"
 
@@ -18,6 +22,7 @@ const end = ref(today())
 const typeFilter = ref<number | null>(null)
 const loading = ref(true)
 const exporting = ref(false)
+const excelExporting = ref(false)
 const errorMessage = ref("")
 const summary = ref<ReportSummary | null>(null)
 
@@ -80,6 +85,30 @@ async function exportCsv() {
   }
 }
 
+async function exportExcel() {
+  errorMessage.value = ""
+  if (!validateRange()) {
+    return
+  }
+  excelExporting.value = true
+  try {
+    await downloadReportExcel({
+      start: start.value,
+      end: end.value,
+      type: typeFilter.value,
+    })
+  } catch (error) {
+    errorMessage.value =
+      error instanceof Error ? error.message : "导出失败"
+  } finally {
+    excelExporting.value = false
+  }
+}
+
+function printReport() {
+  window.print()
+}
+
 // 比率（0-1）显示成百分比
 function percent(rate: number): string {
   return `${(rate * 100).toFixed(1)}%`
@@ -118,6 +147,49 @@ const dayMaxTotal = computed(() => {
     (acc, row) => Math.max(acc, row.total),
     0
   ) ?? 0
+})
+
+// 趋势折线图：手写 inline SVG（异常率），x = 日期，y 轴 3 档刻度。
+// 禁引入图表库，这里只算坐标点，模板里画 <line>/<polyline>。
+const trendChart = computed(() => {
+  const rows = summary.value?.trend ?? []
+  if (rows.length === 0) {
+    return null
+  }
+  const width = 720
+  const height = 220
+  const pad = { top: 16, right: 16, bottom: 44, left: 48 }
+  const innerW = width - pad.left - pad.right
+  const innerH = height - pad.top - pad.bottom
+  const yMax = Math.max(0.1, ...rows.map((row) => row.abnormal_rate))
+  const pointX = (index: number) =>
+    pad.left +
+    (rows.length === 1
+      ? innerW / 2
+      : (index / (rows.length - 1)) * innerW)
+  const pointY = (value: number) =>
+    pad.top + innerH - (value / yMax) * innerH
+  const points = rows
+    .map(
+      (row, index) =>
+        `${pointX(index).toFixed(1)},${pointY(row.abnormal_rate).toFixed(1)}`
+    )
+    .join(" ")
+  const yTicks = [0, yMax / 2, yMax].map((value) => ({
+    key: value.toFixed(4),
+    y: pointY(value).toFixed(1),
+    label: `${(value * 100).toFixed(0)}%`,
+  }))
+  // 天数多时抽稀日期标签，最多约 12 个
+  const labelStep = Math.max(1, Math.ceil(rows.length / 12))
+  const xTicks = rows
+    .map((row, index) => ({
+      index,
+      x: pointX(index).toFixed(1),
+      label: row.date.slice(5),
+    }))
+    .filter((tick) => tick.index % labelStep === 0)
+  return { width, height, pad, points, yTicks, xTicks }
 })
 
 onMounted(() => {
@@ -185,6 +257,23 @@ onMounted(() => {
           @click="exportCsv()"
         >
           {{ exporting ? "导出中..." : "导出 CSV" }}
+        </button>
+
+        <button
+          class="secondary-button"
+          type="button"
+          :disabled="excelExporting"
+          @click="exportExcel()"
+        >
+          {{ excelExporting ? "导出中..." : "导出 Excel" }}
+        </button>
+
+        <button
+          class="secondary-button"
+          type="button"
+          @click="printReport()"
+        >
+          打印
         </button>
       </div>
     </section>
@@ -342,6 +431,202 @@ onMounted(() => {
                     />
                   </span>
                 </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel data-panel">
+        <div class="section-header">
+          <h2>异常率趋势</h2>
+
+          <span class="section-sub">
+            逐日（缺天补 0）
+          </span>
+        </div>
+
+        <div
+          v-if="!trendChart"
+          class="empty-state"
+        >
+          该区间内暂无检测记录
+        </div>
+
+        <svg
+          v-else
+          :viewBox="`0 0 ${trendChart.width} ${trendChart.height}`"
+          class="trend-svg"
+          role="img"
+          aria-label="逐日异常率趋势折线图"
+        >
+          <g
+            v-for="tick in trendChart.yTicks"
+            :key="`y-${tick.key}`"
+          >
+            <line
+              :x1="trendChart.pad.left"
+              :x2="trendChart.width - trendChart.pad.right"
+              :y1="tick.y"
+              :y2="tick.y"
+              stroke="#e8e8e8"
+            />
+            <text
+              :x="trendChart.pad.left - 6"
+              :y="Number(tick.y) + 3"
+              class="trend-tick"
+              text-anchor="end"
+            >
+              {{ tick.label }}
+            </text>
+          </g>
+
+          <g
+            v-for="tick in trendChart.xTicks"
+            :key="`x-${tick.index}`"
+          >
+            <line
+              :x1="tick.x"
+              :x2="tick.x"
+              :y1="trendChart.height - trendChart.pad.bottom"
+              :y2="trendChart.height - trendChart.pad.bottom + 4"
+              stroke="#999"
+            />
+            <text
+              :x="tick.x"
+              :y="trendChart.height - trendChart.pad.bottom + 16"
+              class="trend-tick"
+              text-anchor="middle"
+            >
+              {{ tick.label }}
+            </text>
+          </g>
+
+          <line
+            :x1="trendChart.pad.left"
+            :x2="trendChart.pad.left"
+            :y1="trendChart.pad.top"
+            :y2="trendChart.height - trendChart.pad.bottom"
+            stroke="#999"
+          />
+          <line
+            :x1="trendChart.pad.left"
+            :x2="trendChart.width - trendChart.pad.right"
+            :y1="trendChart.height - trendChart.pad.bottom"
+            :y2="trendChart.height - trendChart.pad.bottom"
+            stroke="#999"
+          />
+          <polyline
+            :points="trendChart.points"
+            fill="none"
+            stroke="#cf1322"
+            stroke-width="2"
+          />
+        </svg>
+      </section>
+
+      <section class="panel data-panel">
+        <div class="section-header">
+          <h2>班次统计</h2>
+
+          <span class="section-sub">
+            白班 08:00~20:00 / 夜班 20:00~次日 08:00
+          </span>
+        </div>
+
+        <div class="table-scroll">
+          <table class="booktabs">
+            <thead>
+              <tr>
+                <th>班次</th>
+                <th>总数</th>
+                <th>异常数</th>
+                <th>正常数</th>
+                <th>平均球化时长(秒)</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              <tr
+                v-for="row in summary.shifts"
+                :key="row.shift"
+              >
+                <td>{{ row.shift }}</td>
+                <td>{{ row.total }}</td>
+                <td>
+                  <span
+                    v-if="row.abnormal > 0"
+                    class="status-abnormal"
+                  >
+                    {{ row.abnormal }}
+                  </span>
+                  <span v-else>
+                    {{ row.abnormal }}
+                  </span>
+                </td>
+                <td>{{ row.normal }}</td>
+                <td>{{ displayNumber(row.avg_actual_time) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel data-panel">
+        <div class="section-header">
+          <h2>标准统计</h2>
+
+          <span class="section-sub">
+            按 standard_record_id 分组
+          </span>
+        </div>
+
+        <div
+          v-if="summary.standards.length === 0"
+          class="empty-state"
+        >
+          该区间内暂无检测记录
+        </div>
+
+        <div
+          v-else
+          class="table-scroll"
+        >
+          <table class="booktabs">
+            <thead>
+              <tr>
+                <th>标准ID</th>
+                <th>标准时长(秒)</th>
+                <th>标准创建时间</th>
+                <th>创建人</th>
+                <th>总数</th>
+                <th>异常数</th>
+                <th>平均实际时长(秒)</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              <tr
+                v-for="row in summary.standards"
+                :key="row.standard_record_id"
+              >
+                <td>{{ row.standard_record_id }}</td>
+                <td>{{ row.standard_time }}</td>
+                <td>{{ row.standard_created_at }}</td>
+                <td>{{ row.standard_created_by }}</td>
+                <td>{{ row.total }}</td>
+                <td>
+                  <span
+                    v-if="row.abnormal > 0"
+                    class="status-abnormal"
+                  >
+                    {{ row.abnormal }}
+                  </span>
+                  <span v-else>
+                    {{ row.abnormal }}
+                  </span>
+                </td>
+                <td>{{ displayNumber(row.avg_actual_time) }}</td>
               </tr>
             </tbody>
           </table>
@@ -610,6 +895,37 @@ tbody tr:hover {
 
 .col-bar {
   width: 40%;
+}
+
+/* 三线表（无竖线）：顶线 / 栏目线 / 底线 */
+table.booktabs {
+  border-top: 2px solid #333;
+  border-bottom: 2px solid #333;
+}
+
+table.booktabs th {
+  color: #333;
+  font-weight: 700;
+  background: transparent;
+  border-bottom: 1px solid #333;
+}
+
+table.booktabs td {
+  border-bottom: none;
+}
+
+table.booktabs tbody tr:hover {
+  background: transparent;
+}
+
+.trend-svg {
+  width: 100%;
+  height: auto;
+}
+
+.trend-tick {
+  fill: #888;
+  font-size: 10px;
 }
 
 @media (max-width: 900px) {

@@ -20,6 +20,7 @@
 """
 
 import sqlite3
+from datetime import date, timedelta
 from typing import Iterator, Sequence
 
 from app.application.reports.stats import (
@@ -29,6 +30,14 @@ from app.application.reports.stats import (
     rate,
 )
 from app.core.exceptions import BusinessException
+
+# 班次口径（两班制）。归属时刻字段与「按天分布」一致，用 detection_time。
+# 白班 = 08:00(含) ~ 20:00(不含)；夜班 = 20:00(含) ~ 次日 08:00(不含)。
+# HH:MM 文本比较与时间序一致（"07:59" < "08:00" ≤ "20:00"）。
+DAY_SHIFT_NAME = "白班"
+NIGHT_SHIFT_NAME = "夜班"
+DAY_SHIFT_START_HM = "08:00"
+NIGHT_SHIFT_START_HM = "20:00"
 
 # 导出的记录列表每页取多少条。页内还要带复核和温度两趟查询，
 # 1000 条一页在 sqlite 上毫秒级，1 万条就是 10 趟，远够快。
@@ -137,6 +146,117 @@ class ReportsService:
                 "avg": round(float(gun_row["avg_t"]), 2) if gun_row["avg_t"] is not None else None,
             }
 
+        # 班次统计（两班制，口径见模块顶部常量）
+        shift_rows = {
+            r["shift"]: r
+            for r in self._conn.execute(
+                f"""
+                SELECT CASE WHEN substr(detection_time, 12, 5) >= ?
+                              OR substr(detection_time, 12, 5) < ?
+                           THEN ? ELSE ? END AS shift,
+                       COUNT(*) AS total,
+                       COALESCE(SUM(CASE WHEN COALESCE(abnormal_type, 0) <> 0 THEN 1 ELSE 0 END), 0) AS abnormal,
+                       AVG(actual_spheroidization_time) AS avg_actual
+                FROM SpheroidizationRecord{where}
+                GROUP BY shift
+                """,
+                [NIGHT_SHIFT_START_HM, DAY_SHIFT_START_HM, NIGHT_SHIFT_NAME, DAY_SHIFT_NAME, *params],
+            )
+        }
+        shifts = []
+        for name in (DAY_SHIFT_NAME, NIGHT_SHIFT_NAME):
+            shift_row = shift_rows.get(name)
+            shift_total = int(shift_row["total"]) if shift_row is not None else 0
+            shift_abnormal = int(shift_row["abnormal"]) if shift_row is not None else 0
+            shift_avg = shift_row["avg_actual"] if shift_row is not None else None
+            shifts.append(
+                {
+                    "shift": name,
+                    "total": shift_total,
+                    "abnormal": shift_abnormal,
+                    "normal": shift_total - shift_abnormal,
+                    "avg_actual_time": round(float(shift_avg), 4) if shift_avg is not None else None,
+                }
+            )
+
+        # 标准维度：按 standard_record_id 分组，JOIN 取标准的创建信息
+        standards = [
+            {
+                "standard_record_id": r["standard_record_id"],
+                "standard_time": float(r["standard_time"]),
+                "standard_created_at": r["standard_created_at"],
+                "standard_created_by": r["standard_created_by"],
+                "total": int(r["total"]),
+                "abnormal": int(r["abnormal"]),
+                "avg_actual_time": round(float(r["avg_actual"]), 4) if r["avg_actual"] is not None else None,
+            }
+            for r in self._conn.execute(
+                f"""
+                SELECT s.standard_record_id,
+                       std.standard_spheroidization_time AS standard_time,
+                       std.created_at AS standard_created_at,
+                       std.created_by AS standard_created_by,
+                       COUNT(*) AS total,
+                       COALESCE(SUM(CASE WHEN COALESCE(s.abnormal_type, 0) <> 0 THEN 1 ELSE 0 END), 0) AS abnormal,
+                       AVG(s.actual_spheroidization_time) AS avg_actual
+                FROM SpheroidizationRecord s
+                JOIN StandardRecord std ON std.standard_record_id = s.standard_record_id
+                {where}
+                GROUP BY s.standard_record_id
+                ORDER BY s.standard_record_id
+                """,
+                params,
+            )
+        ]
+
+        # 趋势：逐日升序，缺天补齐（total=0 / rate=0 / avg=null）
+        trend_days = {
+            r["day"]: r
+            for r in self._conn.execute(
+                f"""
+                SELECT substr(detection_time, 1, 10) AS day,
+                       COUNT(*) AS total,
+                       COALESCE(SUM(CASE WHEN COALESCE(abnormal_type, 0) <> 0 THEN 1 ELSE 0 END), 0) AS abnormal,
+                       AVG(actual_spheroidization_time) AS avg_actual
+                FROM SpheroidizationRecord{where}
+                GROUP BY day
+                """,
+                params,
+            )
+        }
+        trend: list[dict] = []
+        if start_bound and end_bound:
+            first_day, last_day = start_bound[:10], end_bound[:10]
+        elif trend_days:
+            first_day = min(trend_days)
+            last_day = max(trend_days)
+            # 只给一头时，另一头取数据实际到的那天
+            if start_bound:
+                first_day = start_bound[:10]
+            if end_bound:
+                last_day = end_bound[:10]
+        else:
+            first_day = last_day = None
+        if first_day is not None:
+            cursor = date.fromisoformat(first_day)
+            end_cursor = date.fromisoformat(last_day)
+            while cursor <= end_cursor:
+                key = cursor.isoformat()
+                day_row = trend_days.get(key)
+                day_total = int(day_row["total"]) if day_row is not None else 0
+                day_abnormal = int(day_row["abnormal"]) if day_row is not None else 0
+                day_avg = day_row["avg_actual"] if day_row is not None else None
+                trend.append(
+                    {
+                        "date": key,
+                        "total": day_total,
+                        "abnormal": day_abnormal,
+                        "abnormal_rate": rate(day_abnormal, day_total),
+                        "avg_actual_time": round(float(day_avg), 4) if day_avg is not None else None,
+                    }
+                )
+                cursor += timedelta(days=1)
+
         # 按天分布
         by_day = [
             {
@@ -170,6 +290,9 @@ class ReportsService:
                 "coverage_rate": rate(covered, total),
                 "by_gun": by_gun,
             },
+            "shifts": shifts,
+            "standards": standards,
+            "trend": trend,
             "by_day": by_day,
         }
 

@@ -499,6 +499,37 @@ export interface ReportDayRow {
   abnormal: number
 }
 
+/** 班次统计行（白班 08:00~20:00 / 夜班 20:00~次日 08:00） */
+export interface ReportShiftRow {
+  shift: string
+  total: number
+  abnormal: number
+  normal: number
+  // 仅对 actual_spheroidization_time 非空的记录求平均，无样本为 null
+  avg_actual_time: number | null
+}
+
+/** 标准统计行（按 standard_record_id 分组，JOIN 标准表的创建信息） */
+export interface ReportStandardRow {
+  standard_record_id: number
+  standard_time: number
+  standard_created_at: string
+  standard_created_by: string
+  total: number
+  abnormal: number
+  avg_actual_time: number | null
+}
+
+/** 趋势行（区间逐日，缺天补齐：total=0 / rate=0 / avg=null） */
+export interface ReportTrendRow {
+  date: string
+  total: number
+  abnormal: number
+  // 0-1，保留 4 位
+  abnormal_rate: number
+  avg_actual_time: number | null
+}
+
 export interface ReportSummary {
   total: number
   // abnormal_type 0..6 各自的数量（NULL 口径归入 0）
@@ -515,6 +546,9 @@ export interface ReportSummary {
     coverage_rate: number
     by_gun: Record<string, { count: number; avg: number | null }>
   }
+  shifts: ReportShiftRow[]
+  standards: ReportStandardRow[]
+  trend: ReportTrendRow[]
   by_day: ReportDayRow[]
 }
 
@@ -538,8 +572,7 @@ export async function getReportSummary(
   return request(`/api/reports/summary?${search.toString()}`)
 }
 
-/** 导出 CSV 的地址（带当前筛选条件） */
-export function reportExportUrl(query: ReportRangeQuery = {}) {
+function reportExportSearch(query: ReportRangeQuery): string {
   const search = new URLSearchParams()
   if (query.start) {
     search.set("start", query.start)
@@ -550,17 +583,30 @@ export function reportExportUrl(query: ReportRangeQuery = {}) {
   if (query.type !== null && query.type !== undefined) {
     search.set("type", String(query.type))
   }
-  const suffix = search.toString()
+  return search.toString()
+}
+
+/** 导出 CSV 的地址（带当前筛选条件） */
+export function reportExportUrl(query: ReportRangeQuery = {}) {
+  const suffix = reportExportSearch(query)
   return `${apiUrl("/api/reports/export")}${suffix ? `?${suffix}` : ""}`
 }
 
+/** 导出 Excel 的地址（参数与 CSV 一致） */
+export function reportExportExcelUrl(query: ReportRangeQuery = {}) {
+  const suffix = reportExportSearch(query)
+  return `${apiUrl("/api/reports/export/excel")}${suffix ? `?${suffix}` : ""}`
+}
+
 /**
- * 下载导出 CSV：fetch 带 Bearer token（直接 <a> 跳转带不了 Authorization），
- * 拿到 blob 后触发浏览器下载。后端 401/403 时走统一 JSON 信封（HTTP 200），
+ * 下载导出文件（CSV / Excel 共用）：fetch 带 Bearer token
+ * （直接 <a> 跳转带不了 Authorization），拿到 blob 后触发浏览器下载。
+ * 后端 401/403 时走统一 JSON 信封（HTTP 200），
  * 此时解析出 message 抛错，并照旧触发 auth:expired / api:forbidden 事件。
  */
-export async function downloadReportCsv(
-  query: ReportRangeQuery = {}
+async function downloadReportFile(
+  url: string,
+  fallbackName: string
 ): Promise<void> {
   const headers = new Headers()
   const token = auth.value?.token
@@ -568,7 +614,7 @@ export async function downloadReportCsv(
     headers.set("Authorization", `Bearer ${token}`)
   }
 
-  const response = await fetch(reportExportUrl(query), { headers })
+  const response = await fetch(url, { headers })
 
   const contentType = response.headers.get("content-type") ?? ""
   if (!response.ok || contentType.includes("application/json")) {
@@ -593,14 +639,34 @@ export async function downloadReportCsv(
   }
 
   const blob = await response.blob()
-  const url = URL.createObjectURL(blob)
+  const objectUrl = URL.createObjectURL(blob)
   const anchor = document.createElement("a")
-  anchor.href = url
+  anchor.href = objectUrl
   const disposition = response.headers.get("content-disposition") ?? ""
   const match = disposition.match(/filename="?([^";]+)"?/)
-  anchor.download = match ? match[1] : "spheroidization_export.csv"
+  anchor.download = match ? match[1] : fallbackName
   document.body.appendChild(anchor)
   anchor.click()
   anchor.remove()
-  URL.revokeObjectURL(url)
+  URL.revokeObjectURL(objectUrl)
+}
+
+/** 下载导出 CSV */
+export async function downloadReportCsv(
+  query: ReportRangeQuery = {}
+): Promise<void> {
+  return downloadReportFile(
+    reportExportUrl(query),
+    "spheroidization_export.csv"
+  )
+}
+
+/** 下载导出 Excel */
+export async function downloadReportExcel(
+  query: ReportRangeQuery = {}
+): Promise<void> {
+  return downloadReportFile(
+    reportExportExcelUrl(query),
+    "spheroidization_export.xlsx"
+  )
 }

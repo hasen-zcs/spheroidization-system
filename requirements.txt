@@ -4,6 +4,7 @@ FastAPI>=0.110
 pydantic>=2.5,<3
 Uvicorn>=0.27
 bcrypt>=4.0
+openpyxl>=3.1
 
 # 测试依赖（部署机上不装也能跑服务）
 pytest>=8.0

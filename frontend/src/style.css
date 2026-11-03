@@ -622,3 +622,50 @@ a {
     grid-template-columns: 1fr;
   }
 }
+
+/* ==================== 打印（报表页） ====================
+   隐藏导航、按钮、筛选操作、提示等非报表元素，
+   保留统计卡与表格，页边距交给 @page。 */
+
+@media print {
+  @page {
+    margin: 12mm;
+  }
+
+  body,
+  .app-shell {
+    background: #fff;
+  }
+
+  .app-content {
+    min-height: 0;
+  }
+
+  .nav-bar,
+  .filter-actions,
+  .filter-hint,
+  .error-panel,
+  .forbidden-toast,
+  .dialog-overlay,
+  .empty-state,
+  button {
+    display: none !important;
+  }
+
+  .page-header,
+  .panel,
+  .stat-card {
+    border-color: #999;
+    box-shadow: none;
+  }
+
+  .stat-card,
+  .data-panel {
+    break-inside: avoid;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+}

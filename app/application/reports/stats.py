@@ -7,6 +7,8 @@ SQL 在 service.py，这里只算"拿到数字之后怎么算"。
 
 import csv
 import io
+import os
+import tempfile
 from datetime import datetime
 from typing import Iterable, Iterator, Sequence
 
@@ -105,3 +107,32 @@ def iter_csv_chunks(
     tail = flush()
     if tail:
         yield tail
+
+
+def iter_excel_chunks(
+    header: Sequence[str], rows: Iterable[Sequence[object]], chunk_size: int = 64 * 1024
+) -> Iterator[bytes]:
+    """openpyxl write_only 流式生成 .xlsx，再分块读回吐字节。
+
+    write_only 模式逐行 append 直接落盘（zip 流式写），不把整表行攒在内存里；
+    save 完成后按块读临时文件流式吐出，临时文件用完即删。
+    客户端提前断开时生成器被 close，finally 里清理临时文件。
+    """
+    from openpyxl import Workbook
+
+    workbook = Workbook(write_only=True)
+    sheet = workbook.create_sheet()
+    sheet.append(list(header))
+    for row in rows:
+        sheet.append(list(row))
+
+    handle = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
+    handle.close()
+    try:
+        workbook.save(handle.name)
+        with open(handle.name, "rb") as source:
+            while chunk := source.read(chunk_size):
+                yield chunk
+    finally:
+        workbook.close()
+        os.unlink(handle.name)

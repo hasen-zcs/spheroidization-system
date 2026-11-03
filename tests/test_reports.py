@@ -5,10 +5,12 @@
 接口走真 FastAPI。
 """
 
+import io
 import sqlite3
 
 import pytest
 from fastapi.testclient import TestClient
+from openpyxl import load_workbook
 
 from conftest import create_record, create_standard, create_temperature, create_user
 from app.dependencies import Container, get_container
@@ -211,3 +213,153 @@ def test_开始晚于结束返回400(api_client):
     create_standard(container, 70.0, "张三")
     body = _summary(client, headers, start="2026-09-06", end="2026-09-05").json()
     assert body["code"] == 400
+
+
+# ==========================================================
+# TASK-2 新增：班次 / 标准 / 趋势 / Excel 导出
+# ==========================================================
+
+
+def test_空库新增三块结构(api_client):
+    client, container, headers = api_client
+    create_standard(container, 70.0, "张三")
+    data = _summary(client, headers).json()["data"]
+    assert data["shifts"] == [
+        {"shift": "白班", "total": 0, "abnormal": 0, "normal": 0, "avg_actual_time": None},
+        {"shift": "夜班", "total": 0, "abnormal": 0, "normal": 0, "avg_actual_time": None},
+    ]
+    assert data["standards"] == []
+    assert data["trend"] == []
+
+
+def test_班次边界归属与均值(api_client):
+    client, container, headers = api_client
+    create_standard(container, 70.0, "张三")
+    # 四条边界各一条：07:59 夜班 / 08:00 白班 / 19:59 白班 / 20:00 夜班
+    _seed_record(container, 0, "2026-09-20 07:59:00", abnormal_type=0)
+    _seed_record(container, 1, "2026-09-20 08:00:00", abnormal_type=1)
+    _seed_record(container, 2, "2026-09-20 19:59:00", abnormal_type=2)
+    _seed_record(container, 3, "2026-09-20 20:00:00", abnormal_type=3)
+    data = _summary(client, headers, start="2026-09-20", end="2026-09-20").json()["data"]
+    assert [row["shift"] for row in data["shifts"]] == ["白班", "夜班"]
+    day, night = data["shifts"]
+    # 白班 = 08:00(类型1) + 19:59(类型2)，都是异常
+    assert day["total"] == 2
+    assert day["abnormal"] == 2
+    assert day["normal"] == 0
+    assert day["avg_actual_time"] == round((61.0 + 62.0) / 2, 4)
+    # 夜班 = 07:59(类型0 正常) + 20:00(类型3 异常)
+    assert night["total"] == 2
+    assert night["abnormal"] == 1
+    assert night["normal"] == 1
+    assert night["avg_actual_time"] == round((60.0 + 63.0) / 2, 4)
+
+
+def test_班次时长全空时avg为null(api_client):
+    client, container, headers = api_client
+    create_standard(container, 70.0, "张三")
+    create_record(container, "2026-09-20 09:00:00", None)
+    create_record(container, "2026-09-20 21:00:00", None)
+    data = _summary(client, headers, start="2026-09-20", end="2026-09-20").json()["data"]
+    assert [row["avg_actual_time"] for row in data["shifts"]] == [None, None]
+
+
+def test_standards分组与JOIN字段(api_client):
+    client, container, headers = api_client
+    std_a = create_standard(container, 65.0, "张三")
+    _seed_record(container, 0, "2026-09-21 09:00:00", abnormal_type=0)
+    _seed_record(container, 1, "2026-09-21 10:00:00", abnormal_type=3)
+    # 新建标准立即生效，之后两条归属第二套标准
+    std_b = create_standard(container, 75.0, "李四")
+    _seed_record(container, 2, "2026-09-21 11:00:00", abnormal_type=0)
+    _seed_record(container, 3, "2026-09-21 12:00:00", abnormal_type=6)  # 未判定(6)计入异常
+    data = _summary(client, headers, start="2026-09-21", end="2026-09-21").json()["data"]
+    assert [row["standard_record_id"] for row in data["standards"]] == [
+        std_a.standard_record_id,
+        std_b.standard_record_id,
+    ]
+    a, b = data["standards"]
+    # JOIN 出来的标准表字段
+    assert a["standard_time"] == 65.0
+    assert a["standard_created_by"] == "张三"
+    assert a["standard_created_at"]
+    assert a["total"] == 2
+    assert a["abnormal"] == 1
+    assert a["avg_actual_time"] == round((60.0 + 61.0) / 2, 4)
+    assert b["standard_time"] == 75.0
+    assert b["standard_created_by"] == "李四"
+    assert b["total"] == 2
+    assert b["abnormal"] == 1
+    assert b["avg_actual_time"] == round((62.0 + 63.0) / 2, 4)
+
+
+def test_trend缺天补齐与异常率(api_client):
+    client, container, headers = api_client
+    create_standard(container, 70.0, "张三")
+    # 09-01 两条（1 异常）、09-02 无数据、09-03 两条（1 异常）
+    _seed_record(container, 0, "2026-09-01 09:00:00", abnormal_type=0)
+    _seed_record(container, 1, "2026-09-01 10:00:00", abnormal_type=1)
+    _seed_record(container, 2, "2026-09-03 09:00:00", abnormal_type=0)
+    _seed_record(container, 3, "2026-09-03 10:00:00", abnormal_type=2)
+    data = _summary(client, headers, start="2026-09-01", end="2026-09-03").json()["data"]
+    trend = data["trend"]
+    # 序列 3 项，逐日升序，缺天补齐
+    assert [row["date"] for row in trend] == ["2026-09-01", "2026-09-02", "2026-09-03"]
+    assert trend[1] == {
+        "date": "2026-09-02",
+        "total": 0,
+        "abnormal": 0,
+        "abnormal_rate": 0,
+        "avg_actual_time": None,
+    }
+    assert trend[0]["total"] == 2
+    assert trend[0]["abnormal"] == 1
+    assert trend[0]["abnormal_rate"] == 0.5
+    assert trend[0]["avg_actual_time"] == round((60.0 + 61.0) / 2, 4)
+    assert trend[2]["total"] == 2
+    assert trend[2]["abnormal"] == 1
+    assert trend[2]["abnormal_rate"] == 0.5
+    assert trend[2]["avg_actual_time"] == round((62.0 + 63.0) / 2, 4)
+
+
+def test_导出excel登录200且与CSV同参行数一致(api_client):
+    client, container, headers = api_client
+    create_standard(container, 70.0, "张三")
+    first = _seed_record(container, 0, "2026-09-25 10:00:00", abnormal_type=3)
+    _seed_record(container, 1, "2026-09-25 10:05:00")  # 类型 0，被 type=3 过滤掉
+    last = _seed_record(container, 2, "2026-09-26 10:00:00", abnormal_type=3)
+
+    params = {"start": "2026-09-25", "end": "2026-09-26", "type": 3}
+    csv_lines = client.get(
+        "/api/reports/export", params=params, headers=headers
+    ).content.decode("utf-8-sig").strip().split("\n")
+    assert len(csv_lines) == 3  # 表头 + 2 条
+
+    response = client.get("/api/reports/export/excel", params=params, headers=headers)
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    disposition = response.headers["content-disposition"]
+    assert "attachment" in disposition
+    assert disposition.endswith('.xlsx"')
+
+    workbook = load_workbook(io.BytesIO(response.content))
+    sheet = workbook.active
+    rows = list(sheet.iter_rows(values_only=True))
+    # 表头与 CSV 一致（中文列名）
+    assert rows[0] == tuple(CSV_HEADER)
+    # 行数 = CSV 同参数行数
+    assert len(rows) == len(csv_lines)
+    # 记录 ID 顺序与内容对齐
+    assert [str(row[0]) for row in rows[1:]] == [
+        str(first.spheroidization_record_id),
+        str(last.spheroidization_record_id),
+    ]
+    assert rows[1][5] == "超过标准"
+
+
+def test_导出excel游客401(api_client):
+    client, _, _ = api_client
+    response = client.get("/api/reports/export/excel")
+    assert response.json()["code"] == 401
