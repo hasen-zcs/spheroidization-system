@@ -74,6 +74,8 @@ export interface SpheroidizationQuery {
   processed?: boolean
   // 管理员数据管理页看已删除记录用；不传则后端默认 false
   include_deleted?: boolean
+  start_time?: string
+  end_time?: string
 }
 
 export interface StandardRecord {
@@ -219,6 +221,8 @@ export async function request<T>(
     const response = await fetch(apiUrl(path), {
       ...init,
       headers,
+      // 轮询刷新必须绕开浏览器缓存，否则可能拿到旧列表
+      cache: "no-store",
     })
     const text = await response.text()
 
@@ -270,7 +274,7 @@ export async function request<T>(
 }
 
 export function jsonOptions(
-  method: "POST" | "PUT",
+  method: "POST" | "PUT" | "DELETE",
   body: unknown
 ): RequestInit {
   return {
@@ -322,6 +326,12 @@ export async function querySpheroidization(
   }
   if (params.include_deleted !== undefined) {
     search.set("include_deleted", String(params.include_deleted))
+  }
+  if (params.start_time) {
+    search.set("start_time", params.start_time)
+  }
+  if (params.end_time) {
+    search.set("end_time", params.end_time)
   }
 
   return request(`/api/spheroidization?${search.toString()}`)
@@ -407,6 +417,32 @@ export async function getStandardSwitchLogs(): Promise<
   return request("/api/standards/switch-logs")
 }
 
+// 修订检测标准：只传 5 个业务字段，创建信息不接受前端传（后端 extra="forbid"）
+export interface UpdateStandardInput {
+  standard_spheroidization_time: number
+  standard_spheroidization_time_upper: number | null
+  standard_spheroidization_time_lower: number | null
+  weighing_standard: number
+  remark: string
+}
+
+export async function updateStandard(
+  standardId: number,
+  data: UpdateStandardInput
+): Promise<ApiResponse<StandardRecord>> {
+  return request(`/api/standards/${standardId}`, jsonOptions("PUT", data))
+}
+
+// 软删除检测标准：原因必填，删除人由后端按登录态取
+export async function deleteStandard(
+  standardId: number,
+  reason: string
+): Promise<ApiResponse<null>> {
+  return request(
+    `/api/standards/${standardId}`,
+    jsonOptions("DELETE", { reason })
+  )
+}
 
 // ====================
 // 登录 / 登出 / 当前用户
@@ -638,7 +674,7 @@ async function downloadReportFile(
     headers.set("Authorization", `Bearer ${token}`)
   }
 
-  const response = await fetch(url, { headers })
+  const response = await fetch(url, { headers, cache: "no-store" })
 
   const contentType = response.headers.get("content-type") ?? ""
   if (!response.ok || contentType.includes("application/json")) {

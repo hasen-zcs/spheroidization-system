@@ -3,19 +3,26 @@ import { computed, onMounted, ref } from "vue"
 
 import {
   createStandard,
+  deleteStandard,
   getCurrentStandard,
   getStandardHistory,
   getStandardSwitchLogs,
   switchStandard,
+  updateStandard,
 } from "../api"
 import type {
   StandardRecord,
   StandardSwitchLog,
 } from "../api"
 import { can } from "../auth"
+import ReasonSelect from "../components/ReasonSelect.vue"
+import {
+  STANDARD_REMARK_OPTIONS,
+  SWITCH_REASON_OPTIONS,
+} from "../constants"
 
-// 新增按钮按 action:create_standard 权限显示
-const canCreate = computed(() => can("action:create_standard"))
+// 检测标准管理（新增/修改/删除共用）按 action:create_standard 权限显示
+const canManage = computed(() => can("action:create_standard"))
 // 切换标准按钮按 action:switch_standard 权限显示
 const canSwitch = computed(() => can("action:switch_standard"))
 
@@ -114,6 +121,101 @@ async function submitSwitch() {
     }
   } finally {
     switching.value = false
+  }
+}
+
+// ====================
+// 修改标准（5 个业务字段，创建信息不可改）
+// ====================
+
+const updateTarget = ref<StandardRecord | null>(null)
+const updateTime = ref<number>(70)
+const updateLower = ref<number | string | null>(null)
+const updateUpper = ref<number | string | null>(null)
+const updateWeighing = ref<number>(0)
+const updateRemark = ref("")
+const updating = ref(false)
+
+function openUpdateDialog(standard: StandardRecord) {
+  updateTarget.value = standard
+  updateTime.value = standard.standard_spheroidization_time
+  updateLower.value = standard.standard_spheroidization_time_lower
+  updateUpper.value = standard.standard_spheroidization_time_upper
+  updateWeighing.value = standard.weighing_standard
+  updateRemark.value = standard.remark ?? ""
+}
+
+async function submitUpdate() {
+  if (!updateTarget.value || updating.value) {
+    return
+  }
+
+  const upper =
+    updateUpper.value === "" || updateUpper.value === null
+      ? null
+      : Number(updateUpper.value)
+  const lower =
+    updateLower.value === "" || updateLower.value === null
+      ? null
+      : Number(updateLower.value)
+
+  updating.value = true
+  try {
+    const result = await updateStandard(updateTarget.value.id, {
+      standard_spheroidization_time: Number(updateTime.value),
+      standard_spheroidization_time_upper: upper,
+      standard_spheroidization_time_lower: lower,
+      weighing_standard: Number(updateWeighing.value),
+      remark: updateRemark.value,
+    })
+
+    if (result.code === 200) {
+      updateTarget.value = null
+      await loadData()
+    } else {
+      alert(result.message || "修改标准失败")
+    }
+  } finally {
+    updating.value = false
+  }
+}
+
+// ====================
+// 删除标准（软删除，原因必填）
+// ====================
+
+const deleteTarget = ref<StandardRecord | null>(null)
+const deleteReason = ref("")
+const deleting = ref(false)
+
+function openDeleteDialog(standard: StandardRecord) {
+  deleteTarget.value = standard
+  deleteReason.value = ""
+}
+
+async function submitDelete() {
+  if (!deleteTarget.value || deleting.value) {
+    return
+  }
+
+  const reason = deleteReason.value.trim()
+  if (!reason) {
+    alert("请填写删除原因，原因为空不允许提交")
+    return
+  }
+
+  deleting.value = true
+  try {
+    const result = await deleteStandard(deleteTarget.value.id, reason)
+
+    if (result.code === 200) {
+      deleteTarget.value = null
+      await loadData()
+    } else {
+      alert(result.message)
+    }
+  } finally {
+    deleting.value = false
   }
 }
 
@@ -284,7 +386,7 @@ onMounted(() => {
               <th>创建时间</th>
               <th>创建人</th>
               <th>备注</th>
-              <th>应用标准</th>
+              <th>操作</th>
             </tr>
           </thead>
 
@@ -310,22 +412,41 @@ onMounted(() => {
               <td>{{ standard.created_by }}</td>
               <td>{{ standard.remark || "无" }}</td>
               <td>
-                <button
-                  v-if="currentStandard?.id === standard.id"
-                  class="secondary-button apply-button"
-                  type="button"
-                  disabled
-                >
-                  当前标准
-                </button>
-                <button
-                  v-else-if="canSwitch"
-                  class="primary-button apply-button"
-                  type="button"
-                  @click="openSwitchDialog(standard)"
-                >
-                  切换标准
-                </button>
+                <div class="action-cell">
+                  <button
+                    v-if="currentStandard?.id === standard.id"
+                    class="secondary-button apply-button"
+                    type="button"
+                    disabled
+                  >
+                    当前标准
+                  </button>
+                  <button
+                    v-else-if="canSwitch"
+                    class="primary-button apply-button"
+                    type="button"
+                    @click="openSwitchDialog(standard)"
+                  >
+                    切换标准
+                  </button>
+
+                  <button
+                    v-if="canManage"
+                    class="secondary-button apply-button"
+                    type="button"
+                    @click="openUpdateDialog(standard)"
+                  >
+                    修改
+                  </button>
+                  <button
+                    v-if="canManage"
+                    class="secondary-button apply-button danger"
+                    type="button"
+                    @click="openDeleteDialog(standard)"
+                  >
+                    删除
+                  </button>
+                </div>
               </td>
             </tr>
 
@@ -369,9 +490,9 @@ onMounted(() => {
       </ul>
     </section>
 
-    <!-- 新增标准：按 action:create_standard 权限显示 -->
+    <!-- 新增标准：按检测标准管理（action:create_standard）权限显示 -->
     <section
-      v-if="canCreate"
+      v-if="canManage"
       class="panel create-panel"
     >
       <div class="section-header">
@@ -423,10 +544,11 @@ onMounted(() => {
 
           <label class="remark-field">
             <span>备注</span>
-            <textarea
+            <ReasonSelect
               v-model="remark"
-              placeholder="请输入标准调整原因或说明"
-            ></textarea>
+              :options="STANDARD_REMARK_OPTIONS"
+              placeholder="请选择或输入备注（可选）"
+            />
           </label>
         </div>
 
@@ -458,9 +580,10 @@ onMounted(() => {
 
         <label class="dialog-field">
           <span>切换原因（必填）</span>
-          <input
+          <ReasonSelect
             v-model="switchReason"
-            placeholder="请填写切换原因"
+            :options="SWITCH_REASON_OPTIONS"
+            placeholder="请选择切换原因"
           />
         </label>
 
@@ -480,6 +603,139 @@ onMounted(() => {
             @click="submitSwitch"
           >
             {{ switching ? "切换中..." : "确认切换" }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 修改标准弹窗：5 个业务字段可改，创建信息不可改 -->
+    <div
+      v-if="updateTarget"
+      class="dialog-overlay"
+      @click.self="updateTarget = null"
+    >
+      <div class="dialog">
+        <h3>
+          修改标准 — 标准{{ updateTarget.id }}（{{
+            updateTarget.standard_spheroidization_time
+          }} 秒）
+        </h3>
+
+        <p class="dialog-hint">
+          创建时间和创建人不可修改；历史球化记录按创建时快照判定，不受影响。
+        </p>
+
+        <label class="dialog-field">
+          <span>球化时间标准</span>
+          <input
+            v-model.number="updateTime"
+            min="0"
+            step="0.1"
+            type="number"
+          />
+        </label>
+
+        <label class="dialog-field">
+          <span>球化时间下限</span>
+          <input
+            v-model.number="updateLower"
+            min="0"
+            step="0.1"
+            type="number"
+          />
+        </label>
+
+        <label class="dialog-field">
+          <span>球化时间上限</span>
+          <input
+            v-model.number="updateUpper"
+            min="0"
+            step="0.1"
+            type="number"
+          />
+        </label>
+
+        <label class="dialog-field">
+          <span>称重标准</span>
+          <input
+            v-model.number="updateWeighing"
+            min="0"
+            step="0.1"
+            type="number"
+          />
+        </label>
+
+        <label class="dialog-field">
+          <span>备注</span>
+          <ReasonSelect
+            v-model="updateRemark"
+            :options="STANDARD_REMARK_OPTIONS"
+            placeholder="请选择或输入备注（可选）"
+          />
+        </label>
+
+        <div class="dialog-actions">
+          <button
+            class="secondary-button"
+            type="button"
+            @click="updateTarget = null"
+          >
+            取消
+          </button>
+
+          <button
+            class="primary-button"
+            :disabled="updating"
+            type="button"
+            @click="submitUpdate"
+          >
+            {{ updating ? "保存中..." : "保存修改" }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 删除标准弹窗：软删除，原因必填 -->
+    <div
+      v-if="deleteTarget"
+      class="dialog-overlay"
+      @click.self="deleteTarget = null"
+    >
+      <div class="dialog">
+        <h3>
+          删除标准 — 标准{{ deleteTarget.id }}（{{
+            deleteTarget.standard_spheroidization_time
+          }} 秒）
+        </h3>
+
+        <p class="dialog-hint">
+          删除后该标准不再出现在标准记录与切换列表；若为当前标准将被拒绝。此操作会留审计记录。
+        </p>
+
+        <label class="dialog-field">
+          <span>删除原因（必填）</span>
+          <input
+            v-model="deleteReason"
+            placeholder="请填写删除原因"
+          />
+        </label>
+
+        <div class="dialog-actions">
+          <button
+            class="secondary-button"
+            type="button"
+            @click="deleteTarget = null"
+          >
+            取消
+          </button>
+
+          <button
+            class="primary-button"
+            :disabled="deleting"
+            type="button"
+            @click="submitDelete"
+          >
+            {{ deleting ? "删除中..." : "确认删除" }}
           </button>
         </div>
       </div>
@@ -609,6 +865,24 @@ tbody tr:hover {
   padding: 5px 10px;
   font-size: 12px;
   white-space: nowrap;
+}
+
+/* 操作列：多个按钮并排，间距 6px */
+.action-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.apply-button.danger {
+  color: #d4380d;
+  border-color: #d4380d;
+}
+
+.apply-button.danger:hover:not(:disabled) {
+  background: #d4380d;
+  color: #fff;
 }
 
 .switch-log-list {

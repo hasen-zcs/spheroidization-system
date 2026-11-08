@@ -23,6 +23,39 @@ class StandardCreateRequest(BaseModel):
     remark: str = ""
 
 
+class StandardUpdateRequest(BaseModel):
+    """修订检测标准的请求。
+
+    校验与 StandardCreateRequest 完全对齐；created_by / created_at 不接受前端传，
+    修订永远不改创建信息（extra="forbid" 挡掉多传的字段）。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    standard_spheroidization_time: float = Field(gt=0)
+    weighing_standard: float
+    standard_spheroidization_time_upper: float | None = Field(default=None, gt=0)
+    standard_spheroidization_time_lower: float | None = Field(default=None, gt=0)
+    remark: str = ""
+
+
+class StandardDeleteRequest(BaseModel):
+    """软删除检测标准的请求：只收原因。删除人取登录态，不接受前端填。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str
+
+    @field_validator("reason")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        """原因不能全是空格，照 StandardSwitchRequest 的口径：
+        strip 后判空，放进审计里等于没有原因。"""
+        if not value.strip():
+            raise ValueError("删除原因不能为空")
+        return value
+
+
 class StandardSwitchRequest(BaseModel):
     """切换当前应用标准的请求。
 

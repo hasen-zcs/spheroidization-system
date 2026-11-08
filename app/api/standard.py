@@ -5,16 +5,20 @@
 
 from fastapi import APIRouter, Depends, Query, Request
 
+from app.application.admin.manage import ManageDataUseCase
 from app.application.standard.create import CreateStandardUseCase
 from app.application.standard.query import QueryStandardUseCase
 from app.application.standard.switch import SwitchStandardUseCase
+from app.application.standard.update import UpdateStandardUseCase
 from app.core import permissions as P
 from app.core.security import Session
 from app.dependencies import (
     get_audit_logger,
     get_create_standard_uc,
+    get_manage_data_uc,
     get_query_standard_uc,
     get_switch_standard_uc,
+    get_update_standard_uc,
     require_login,
     require_permission,
 )
@@ -23,7 +27,9 @@ from app.domain.audit.service import AuditLogger, client_ip
 from app.schemas.common import fail, ok
 from app.schemas.standard import (
     StandardCreateRequest,
+    StandardDeleteRequest,
     StandardSwitchRequest,
+    StandardUpdateRequest,
     switch_log_to_response,
     to_response,
 )
@@ -208,3 +214,71 @@ def list_switch_logs(
             "page_size": page_size,
         }
     )
+
+
+# /{standard_id} 路由放在所有字面量路由之后（见 /current 上方的注释），
+# 否则 "current" / "history" 等会被当成 standard_id 去转 int，直接 422。
+@router.put("/{standard_id}")
+def update_standard(
+    standard_id: int,
+    data: StandardUpdateRequest,
+    request: Request,
+    session: Session = Depends(require_permission(P.ACTION_CREATE_STANDARD)),
+    uc: UpdateStandardUseCase = Depends(get_update_standard_uc),
+    audit: AuditLogger = Depends(get_audit_logger),
+):
+    # 修订只改 5 个业务字段；created_at / created_by 由仓储保证不动。
+    # 权限和新增共用 action:create_standard（前端"检测标准管理"一个开关管增/改/删）。
+    standard = uc.execute(
+        standard_record_id=standard_id,
+        standard_spheroidization_time=data.standard_spheroidization_time,
+        standard_spheroidization_time_upper=data.standard_spheroidization_time_upper,
+        standard_spheroidization_time_lower=data.standard_spheroidization_time_lower,
+        weighing_standard=data.weighing_standard,
+        remark=data.remark,
+    )
+    # 审计留痕：业务已提交成功才写；写入失败只记日志，不影响响应
+    audit.record(
+        actor=session.username,
+        action=AuditAction.UPDATE_STANDARD,
+        target_type=AuditTarget.STANDARD,
+        target_id=standard.standard_record_id,
+        detail={
+            "standard_spheroidization_time": standard.standard_spheroidization_time,
+            "standard_spheroidization_time_upper": standard.standard_spheroidization_time_upper,
+            "standard_spheroidization_time_lower": standard.standard_spheroidization_time_lower,
+            "weighing_standard": standard.weighing_standard,
+            "remark": standard.remark,
+        },
+        ip=client_ip(request),
+    )
+    return ok(to_response(standard), "标准修改成功")
+
+
+@router.delete("/{standard_id}")
+def delete_standard(
+    standard_id: int,
+    data: StandardDeleteRequest,
+    request: Request,
+    session: Session = Depends(require_permission(P.ACTION_CREATE_STANDARD)),
+    uc: ManageDataUseCase = Depends(get_manage_data_uc),
+    audit: AuditLogger = Depends(get_audit_logger),
+):
+    # 软删除逻辑不另写：直接复用管理员数据管理的 ManageDataUseCase，
+    # 当前生效标准被删时它会抛 400「该标准当前生效，请先切换标准后再作废」，
+    # 和 admin 删除端点同一口径。
+    result = uc.soft_delete("standard", standard_id, session.username, data.reason)
+    if result.status == "not_found":
+        return fail("目标不存在", 404)
+    if result.status == "already":
+        return ok(message="该标准已删除，无需重复操作")
+    # 审计 detail 只带业务关键字段 + 软删三列，不含图片 BLOB（ManageDataUseCase 保证）
+    audit.record(
+        actor=session.username,
+        action=AuditAction.DELETE_STANDARD,
+        target_type=AuditTarget.STANDARD,
+        target_id=standard_id,
+        detail={"before": result.before, "after": result.after},
+        ip=client_ip(request),
+    )
+    return ok(message="标准已删除")
