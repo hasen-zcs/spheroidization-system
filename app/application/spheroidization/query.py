@@ -73,6 +73,8 @@ class QuerySpheroidizationUseCase:
         abnormal: bool | None = None,
         processed: bool | None = None,
         include_deleted: bool = False,
+        start_time: str | None = None,
+        end_time: str | None = None,
     ) -> tuple[List[SpheroidizationRecord], int]:
         offset = (page - 1) * page_size
         records = self.spheroid_repo.list_page(
@@ -81,9 +83,15 @@ class QuerySpheroidizationUseCase:
             abnormal=abnormal,
             processed=processed,
             include_deleted=include_deleted,
+            start_time=start_time,
+            end_time=end_time,
         )
         total = self.spheroid_repo.count(
-            abnormal=abnormal, processed=processed, include_deleted=include_deleted
+            abnormal=abnormal,
+            processed=processed,
+            include_deleted=include_deleted,
+            start_time=start_time,
+            end_time=end_time,
         )
         return records, total
 

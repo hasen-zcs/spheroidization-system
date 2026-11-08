@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue"
+import { computed, onMounted, onUnmounted, ref } from "vue"
 
 import {
   downloadReportCsv,
@@ -56,12 +56,14 @@ function validateRange(): boolean {
   return true
 }
 
-async function load() {
+async function load(silent = false) {
   errorMessage.value = ""
   if (!validateRange()) {
     return
   }
-  loading.value = true
+  if (!silent) {
+    loading.value = true
+  }
   try {
     const result = await getReportSummary(start.value, end.value)
     if (result.code !== 200) {
@@ -207,8 +209,45 @@ const trendChart = computed(() => {
   return { width, height, pad, points, yTicks, xTicks, single }
 })
 
+// 自动轮询：报表为汇总视图，每 30 秒静默刷新，新炉次入库后数字自动跟上
+const POLL_INTERVAL_MS = 30000
+let pollTimer: number | null = null
+let visibilityHandler: (() => void) | null = null
+
+function startPolling() {
+  if (pollTimer !== null) {
+    return
+  }
+  pollTimer = window.setInterval(() => {
+    void load(true)
+  }, POLL_INTERVAL_MS)
+  // 从后台切回页面时立即刷新一次
+  visibilityHandler = () => {
+    if (document.visibilityState === "visible") {
+      void load(true)
+    }
+  }
+  document.addEventListener("visibilitychange", visibilityHandler)
+}
+
+function stopPolling() {
+  if (pollTimer !== null) {
+    window.clearInterval(pollTimer)
+    pollTimer = null
+  }
+  if (visibilityHandler) {
+    document.removeEventListener("visibilitychange", visibilityHandler)
+    visibilityHandler = null
+  }
+}
+
+onUnmounted(() => {
+  stopPolling()
+})
+
 onMounted(() => {
   void load()
+  startPolling()
 })
 </script>
 

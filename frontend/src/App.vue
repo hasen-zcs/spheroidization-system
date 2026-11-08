@@ -40,8 +40,11 @@ async function handleLogout() {
   } catch {
     // 登出接口失败也要清本地登录态
   }
+  const current = route.fullPath
   clearSession()
-  void router.push("/")
+  // 修：原来 push("/") 与当前路由相同会被 vue-router 当冗余导航丢弃，
+  // 守卫不触发 → 退出后停留在原页面（已登出但内容还在）。直接跳登录页。
+  void router.push({ path: "/login", query: { redirect: current } })
 }
 
 // ====================

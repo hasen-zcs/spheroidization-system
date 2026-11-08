@@ -376,7 +376,7 @@ def test_视频代理上游不可用时返回503信封(env, monkeypatch):
     """视频服务没起来时，前端拿到 503 + 信封，而不是裸 500/挂起。"""
     from app.api import video
 
-    monkeypatch.setattr(video, "_upstream_base", lambda: "http://127.0.0.1:1")
+    monkeypatch.setattr(video, "_upstream_base", lambda feed: "http://127.0.0.1:1")
     client, _ = env
     resp = client.get("/api/video_feed1")
     assert resp.status_code == 503

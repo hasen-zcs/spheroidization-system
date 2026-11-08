@@ -39,6 +39,27 @@ const processingId = ref<number | null>(null)
 const resultFilter = ref("all")
 const processFilter = ref("all")
 
+const startTimeInput = ref("")
+const endTimeInput = ref("")
+const activeStartTime = ref("")
+const activeEndTime = ref("")
+
+function toBackendTime(value: string, isEnd: boolean): string {
+  if (!value) return ""
+  const [date, time] = value.split("T")
+  const hh = time.split(":")[0]
+  return isEnd ? `${date} ${hh}:59:59` : `${date} ${hh}:00:00`
+}
+
+const activeTimeLabel = computed(() => {
+  if (!activeStartTime.value && !activeEndTime.value) return ""
+  const s = activeStartTime.value ? activeStartTime.value.slice(0, 16) : "…"
+  const e = activeEndTime.value
+    ? activeEndTime.value.slice(0, 13) + "00"
+    : "…"
+  return `${s} ~ ${e}`
+})
+
 // 后端已允许部分字段为空，空值统一显示成 —，
 // 不能对可能为 null 的值直接调 toFixed / slice
 function display(value: string | number | null | undefined) {
@@ -97,6 +118,8 @@ async function loadRecords(silent = false) {
       page_size: pageSize,
       abnormal,
       processed,
+      start_time: activeStartTime.value || undefined,
+      end_time: activeEndTime.value || undefined,
     })
 
     if (result.code !== 200) {
@@ -191,6 +214,22 @@ function applyFilters() {
   loadRecords()
 }
 
+function applyTimeFilter() {
+  activeStartTime.value = toBackendTime(startTimeInput.value, false)
+  activeEndTime.value = toBackendTime(endTimeInput.value, true)
+  page.value = 1
+  loadRecords()
+}
+
+function clearTimeFilter() {
+  startTimeInput.value = ""
+  endTimeInput.value = ""
+  activeStartTime.value = ""
+  activeEndTime.value = ""
+  page.value = 1
+  loadRecords()
+}
+
 function changePage(nextPage: number) {
   if (nextPage < 1 || nextPage > totalPages.value) {
     return
@@ -204,6 +243,10 @@ watch(
   (abnormalOnly) => {
     resultFilter.value = abnormalOnly ? "abnormal" : "all"
     processFilter.value = "all"
+    startTimeInput.value = ""
+    endTimeInput.value = ""
+    activeStartTime.value = ""
+    activeEndTime.value = ""
     page.value = 1
     loadRecords()
   }
@@ -268,6 +311,43 @@ onMounted(() => {
           <option value="unprocessed">未处理</option>
         </select>
       </div>
+
+      <div class="time-range-group">
+        <label>起</label>
+        <input
+          v-model="startTimeInput"
+          type="datetime-local"
+          class="time-input"
+        />
+        <label>止</label>
+        <input
+          v-model="endTimeInput"
+          type="datetime-local"
+          class="time-input"
+        />
+        <button
+          class="time-apply-btn"
+          type="button"
+          @click="applyTimeFilter"
+        >
+          应用
+        </button>
+        <a
+          v-if="activeTimeLabel"
+          class="time-clear-link"
+          href="javascript:void(0)"
+          @click.prevent="clearTimeFilter"
+        >
+          清除
+        </a>
+      </div>
+
+      <span
+        v-if="activeTimeLabel"
+        class="time-range-label"
+      >
+        {{ activeTimeLabel }}
+      </span>
 
       <button
         class="primary-button search-button"
@@ -617,6 +697,67 @@ tbody tr:hover {
   margin-left: 4px;
   color: #8a3b2e;
   font-size: 11px;
+}
+
+.time-range-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #666;
+  font-size: 12px;
+}
+
+.time-range-group label {
+  color: #666;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.time-input {
+  min-height: 30px;
+  padding: 4px 8px;
+  color: #1a2a3a;
+  background: #fff;
+  border: 1px solid #d9d9d9;
+  border-radius: 2px;
+  font-size: 12px;
+}
+
+.time-apply-btn {
+  min-height: 30px;
+  padding: 4px 12px;
+  color: #fff;
+  background: #B08D3E;
+  border: 1px solid #B08D3E;
+  border-radius: 2px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.time-apply-btn:hover {
+  background: #9a7a34;
+  border-color: #9a7a34;
+}
+
+.time-clear-link {
+  color: #1890ff;
+  font-size: 12px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.time-clear-link:hover {
+  text-decoration: underline;
+}
+
+.time-range-label {
+  color: #B08D3E;
+  font-size: 12px;
+  white-space: nowrap;
+  border: 1px solid #B08D3E;
+  border-radius: 2px;
+  padding: 3px 8px;
+  background: #fdf8ef;
 }
 
 @media (max-width: 600px) {

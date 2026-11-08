@@ -4,6 +4,8 @@
 业务规则(标准快照、处置不可逆)全在 UseCase 里,这里一行都不写。
 """
 
+import re
+
 from fastapi import APIRouter, Depends, Query, Request, Response
 
 from app.application.spheroidization.create import CreateSpheroidizationUseCase
@@ -65,6 +67,20 @@ def _guess_media_type(blob: bytes) -> str:
     return "application/octet-stream"
 
 
+_TIME_FORMAT_RE = re.compile(r"^\d{4}-\d{2}-\d{2} ([01]\d|2[0-3]):[0-5]\d:[0-5]\d$")
+
+
+def _validate_time_range(
+    start_time: str | None,
+    end_time: str | None,
+):
+    """校验时间格式；非法返回 400 信封，合法返回 None。"""
+    for value in (start_time, end_time):
+        if value and not _TIME_FORMAT_RE.match(value):
+            return fail("时间格式应为 YYYY-MM-DD HH:MM:SS", 400)
+    return None
+
+
 def _page_response(
     uc: QuerySpheroidizationUseCase,
     page: int,
@@ -72,6 +88,8 @@ def _page_response(
     abnormal: bool | None = None,
     processed: bool | None = None,
     include_deleted: bool = False,
+    start_time: str | None = None,
+    end_time: str | None = None,
 ):
     """三条列表接口共用的分页响应,改一处就全生效。
 
@@ -84,6 +102,8 @@ def _page_response(
         abnormal=abnormal,
         processed=processed,
         include_deleted=include_deleted,
+        start_time=start_time,
+        end_time=end_time,
     )
     latest_reviews = uc.latest_review_results(records)
     temperatures = uc.temperatures_for(records)
@@ -188,6 +208,8 @@ def query_spheroidization(
     processed: bool | None = Query(None),
     # 管理员看已删除记录（恢复用）。默认 False，业务页行为不变。
     include_deleted: bool = Query(False),
+    start_time: str | None = Query(None),
+    end_time: str | None = Query(None),
     session: Session | None = Depends(get_optional_session),
     uc: QuerySpheroidizationUseCase = Depends(get_query_spheroidization_uc),
 ):
@@ -208,6 +230,10 @@ def query_spheroidization(
         if not session.is_admin and P.ACTION_MANAGE_DATA not in session.permissions:
             return fail("没有该操作权限", 403)
 
+    time_err = _validate_time_range(start_time, end_time)
+    if time_err is not None:
+        return time_err
+
     return _page_response(
         uc=uc,
         page=page,
@@ -215,6 +241,8 @@ def query_spheroidization(
         abnormal=abnormal,
         processed=processed,
         include_deleted=include_deleted,
+        start_time=start_time,
+        end_time=end_time,
     )
 
 
@@ -224,14 +252,22 @@ def query_spheroidization(
 def query_abnormal_spheroidization(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=200),
+    start_time: str | None = Query(None),
+    end_time: str | None = Query(None),
     session: Session = Depends(require_permission(P.PAGE_ABNORMAL)),
     uc: QuerySpheroidizationUseCase = Depends(get_query_spheroidization_uc),
 ):
+    time_err = _validate_time_range(start_time, end_time)
+    if time_err is not None:
+        return time_err
+
     return _page_response(
         uc=uc,
         page=page,
         page_size=page_size,
         abnormal=True,
+        start_time=start_time,
+        end_time=end_time,
     )
 
 
