@@ -12,10 +12,12 @@ import type {
   SpheroidizationRecord,
 } from "../api"
 import { can } from "../auth"
+import ReasonSelect from "../components/ReasonSelect.vue"
 import {
   abnormalResultLabel,
   abnormalTone,
   abnormalTypeLabel,
+  SWITCH_REASON_OPTIONS,
 } from "../constants"
 
 // 视频服务不在本后端里（现场是独立 5080）。开发走 Vite 代理 /api/video_feed*，
@@ -216,7 +218,7 @@ async function loadRecords(silent = false) {
   try {
     const result = await querySpheroidization({
       page: 1,
-      page_size: 5,
+      page_size: 8,
     })
 
     if (result.code !== 200) {
@@ -242,7 +244,7 @@ const tableRows = computed(() => {
         new Date(a.detection_time).getTime()
       )
     })
-    .slice(0, 5)
+    .slice(0, 8)
 })
 
 const latestRecord = computed(() => {
@@ -252,7 +254,19 @@ const latestRecord = computed(() => {
 const statusInfo = computed(() => {
   const record = latestRecord.value
 
+  // 铁水温度与测温时间合并显示：1350℃（10:23:45）；
+  // 没有测温时间只显 1350℃；没有温度整体显示 --
+  let temperature = "--"
+
+  if (record && record.temperature !== null) {
+    temperature =
+      record.temperature_time === null || record.temperature_time === ""
+        ? `${record.temperature}℃`
+        : `${record.temperature}℃（${record.temperature_time}）`
+  }
+
   return {
+    recordId: record ? `#${record.id}` : "--",
     recordStatus: record
       ? record.processed
         ? "已处理"
@@ -267,11 +281,10 @@ const statusInfo = computed(() => {
     machineResult: record
       ? abnormalResultLabel(record.spheroidization_abnormal)
       : "--",
+    weight: record ? display(record.spheroidization_weight) : "--",
+    abnormalReason: record ? getAbnormalReason(record) : "--",
     processedBy: record ? record.processed_by ?? "--" : "--",
-    temperature: record ? display(record.temperature) : "--",
-    temperatureTime: record
-      ? display(record.temperature_time)
-      : "--",
+    temperature,
   }
 })
 
@@ -300,14 +313,14 @@ const tableScroll = ref<HTMLElement | null>(null)
 const tableEl = ref<HTMLTableElement | null>(null)
 
 // 表头分隔线可拖拽调整列宽（Excel 式），只作用于本页表格。
-// 前 9 列是固定宽度；最后一列（报警原因）自动吃掉剩余宽度，
+// 前 9 列是固定宽度；最后一列（异常原因）自动吃掉剩余宽度，
 // 它的右边缘始终贴着容器右边，不会因为拖拽其它列而脱开。
 const MIN_COLUMN_WIDTH = 40
 const LAST_COLUMN_MIN = 72
 const LAST_COLUMN_INDEX = 9
 
 const columnWidths = ref<number[]>([
-  46, 78, 140, 140, 88, 140, 140, 100, 64, 72,
+  46, 78, 140, 140, 88, 140, 140, 100, 64, 160,
 ])
 
 // 表格容器宽度（换算成表格自身像素，抵消页面 125% 缩放）
@@ -695,9 +708,10 @@ onMounted(() => {
 
         <label class="dialog-field">
           <span>切换原因（必填）</span>
-          <input
+          <ReasonSelect
             v-model="switchReason"
-            placeholder="请填写切换原因"
+            :options="SWITCH_REASON_OPTIONS"
+            placeholder="请选择切换原因"
           />
         </label>
 
@@ -819,7 +833,7 @@ onMounted(() => {
               />
             </th>
             <th>
-              报警原因
+              异常原因
             </th>
           </tr>
         </thead>
@@ -862,64 +876,52 @@ onMounted(() => {
     </div>
 
     <div class="info-panel">
-      <div class="info-column">
-        <div>
-          当前记录状态：
-          <input
-            :value="statusInfo.recordStatus"
-            readonly
-          />
-        </div>
-
-        <div>
-          标准/实际球化时间：
-          <input
-            :value="statusInfo.spheroidizationTime"
-            readonly
-          />
-        </div>
-
-        <div>
-          检测时间：
-          <input
-            :value="statusInfo.detectionTime"
-            readonly
-          />
-        </div>
+      <div class="info-item">
+        <span class="info-label">记录 #：</span>
+        <input
+          :value="statusInfo.recordId"
+          readonly
+        />
       </div>
 
-      <div class="info-column">
-        <div>
-          检测结果：
-          <input
-            :value="statusInfo.machineResult"
-            readonly
-          />
-        </div>
+      <div class="info-item">
+        <span class="info-label">检测时间：</span>
+        <input
+          :value="statusInfo.detectionTime"
+          readonly
+        />
+      </div>
 
-        <div>
-          处理人：
-          <input
-            :value="statusInfo.processedBy"
-            readonly
-          />
-        </div>
+      <div class="info-item">
+        <span class="info-label">检测结果：</span>
+        <input
+          :value="statusInfo.machineResult"
+          readonly
+        />
+      </div>
 
-        <div>
-          铁水温度：
-          <input
-            :value="`${statusInfo.temperature}℃`"
-            readonly
-          />
-        </div>
+      <div class="info-item">
+        <span class="info-label">标准/实际球化时间：</span>
+        <input
+          :value="statusInfo.spheroidizationTime"
+          readonly
+        />
+      </div>
 
-        <div>
-          测温时间：
-          <input
-            :value="statusInfo.temperatureTime"
-            readonly
-          />
-        </div>
+      <div class="info-item">
+        <span class="info-label">铁水重量：</span>
+        <input
+          :value="statusInfo.weight"
+          readonly
+        />
+      </div>
+
+      <div class="info-item">
+        <span class="info-label">异常原因：</span>
+        <input
+          :value="statusInfo.abnormalReason"
+          readonly
+        />
       </div>
     </div>
 
@@ -1188,28 +1190,36 @@ td {
 }
 
 .info-panel {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 6px 12px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px 12px;
+  padding: 8px 12px;
   background: #e6f2ff;
   border: 1px solid #b8d4e8;
   border-radius: 4px;
 }
 
-.info-column {
-  display: grid;
-  gap: 3px;
+.info-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
 }
 
-.info-column > div {
+/* 标签统一宽度、右对齐，冒号对齐，输入框从同一 x 起点开始 */
+.info-label {
+  flex: none;
+  width: 128px;
   font-size: 12px;
   line-height: 1.2;
   white-space: nowrap;
+  text-align: right;
 }
 
 .info-panel input {
-  width: 138px;
+  flex: 1;
+  min-width: 0;
+  width: auto;
   padding: 1px 6px;
   color: #003399;
   font-size: 12px;
@@ -1230,7 +1240,7 @@ td {
   }
 
   .info-panel {
-    flex-direction: column;
+    grid-template-columns: 1fr;
   }
 
 }

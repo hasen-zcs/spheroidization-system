@@ -13,10 +13,12 @@ import type {
   SpheroidizationRecord,
 } from "../api"
 import { can } from "../auth"
+import ReasonSelect from "../components/ReasonSelect.vue"
 import {
   abnormalResultLabel,
   abnormalTone,
   abnormalTypeLabel,
+  REVIEW_REMARK_OPTIONS,
 } from "../constants"
 
 const route = useRoute()
@@ -499,10 +501,11 @@ onMounted(() => {
 
             复核说明
 
-            <textarea
+            <ReasonSelect
               v-model="reviewRemark"
-              placeholder="请输入复核说明"
-            ></textarea>
+              :options="REVIEW_REMARK_OPTIONS"
+              placeholder="请选择或输入复核说明"
+            />
 
           </label>
 

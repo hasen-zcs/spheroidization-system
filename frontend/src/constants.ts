@@ -71,7 +71,7 @@ export const PAGE_PERMISSIONS: PermissionDef[] = [
 export const ACTION_PERMISSIONS: PermissionDef[] = [
   { key: "action:process", label: "标记处理" },
   { key: "action:review", label: "人工复核" },
-  { key: "action:create_standard", label: "新增检测标准" },
+  { key: "action:create_standard", label: "检测标准管理" },
   { key: "action:switch_standard", label: "切换标准" },
   { key: "action:manage_data", label: "数据管理" },
   { key: "action:manage_users", label: "用户管理操作" },
@@ -92,4 +92,31 @@ export const PERMISSION_GROUPS: Array<{
 }> = [
   { key: "page", label: "页面", items: PAGE_PERMISSIONS },
   { key: "action", label: "功能", items: ACTION_PERMISSIONS },
+]
+
+// 下拉条预设选项（2026-11-06 三需求 R2，用户视角=车间/工艺员）
+export const SWITCH_REASON_OPTIONS: string[] = [
+  "标准值更新（工艺优化）",
+  "异常炉次后重新标定",
+  "新材料试浇",
+  "设备仪表标定后",
+  "季节温变调整",
+  "纠正前期误操作",
+]
+
+export const REVIEW_REMARK_OPTIONS: string[] = [
+  "机器误判，纠正为正常",
+  "机器漏判，纠正为异常",
+  "取样验证与机器一致",
+  "取样验证与机器不符",
+  "设备故障后复测",
+  "样品缺失无法复核",
+]
+
+export const STANDARD_REMARK_OPTIONS: string[] = [
+  "工艺参数优化",
+  "异常炉次后重新标定",
+  "新材料新牌号试浇",
+  "设备变更或标定",
+  "季节温变调整",
 ]
