@@ -69,9 +69,11 @@ class SqliteSpheroidizationRepository(SpheroidizationRepository):
         abnormal: bool | None = None,
         processed: bool | None = None,
         include_deleted: bool = False,
-    ) -> tuple[str, list[int]]:
+        start_time: str | None = None,
+        end_time: str | None = None,
+    ) -> tuple[str, list]:
         conditions: list[str] = []
-        params: list[int] = []
+        params: list = []
         # 默认过滤软删除；include_deleted 只给管理员"看已删除"用（见 API 层权限校验）
         if not include_deleted:
             conditions.append("deleted_at IS NULL")
@@ -86,6 +88,12 @@ class SqliteSpheroidizationRepository(SpheroidizationRepository):
         if processed is not None:
             conditions.append("processed = ?")
             params.append(1 if processed else 0)
+        if start_time:
+            conditions.append("detection_time >= ?")
+            params.append(start_time)
+        if end_time:
+            conditions.append("detection_time <= ?")
+            params.append(end_time)
         if not conditions:
             return "", params
         return " WHERE " + " AND ".join(conditions), params
@@ -258,8 +266,12 @@ class SqliteSpheroidizationRepository(SpheroidizationRepository):
         abnormal: bool | None = None,
         processed: bool | None = None,
         include_deleted: bool = False,
+        start_time: str | None = None,
+        end_time: str | None = None,
     ) -> List[SpheroidizationRecord]:
-        where, params = self._where_clause(abnormal, processed, include_deleted)
+        where, params = self._where_clause(
+            abnormal, processed, include_deleted, start_time, end_time
+        )
         # 按检测时间降序（最新在前），检测时间相同的再按主键降序：
         # 补录/回补的历史数据主键晚于检测时间（如 11-03 补录 10-30 的炉次），
         # 光按主键排会让旧时间记录顶在列表最前，看起来"表是乱的"。
@@ -281,21 +293,83 @@ class SqliteSpheroidizationRepository(SpheroidizationRepository):
         abnormal: bool | None = None,
         processed: bool | None = None,
         include_deleted: bool = False,
+        start_time: str | None = None,
+        end_time: str | None = None,
     ) -> int:
-        where, params = self._where_clause(abnormal, processed, include_deleted)
+        where, params = self._where_clause(
+            abnormal, processed, include_deleted, start_time, end_time
+        )
         row = self._conn.execute(
             f"SELECT COUNT(*) FROM {self._table_name}{where}",
             params,
         ).fetchone()
         return int(row[0])
 
+    def get_by_id_including_deleted(
+        self, record_id: int
+    ) -> Optional[SpheroidizationRecord]:
+        """按主键取整行，含已软删除的，查不到返回 None。"""
+        row = self._conn.execute(
+            f"SELECT * FROM {self._table_name} WHERE {self._pk_column} = ?",
+            (record_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return self._to_entity(row)
+
+    def soft_delete(
+        self, record_id: int, deleted_by: str, delete_reason: str
+    ) -> bool:
+        """软删除：置软删三列。rowcount=0 表示行不存在或已删。"""
+        with self._conn:
+            cursor = self._conn.execute(
+                f'UPDATE "{self._table_name}"'
+                " SET deleted_at=?, deleted_by=?, delete_reason=?"
+                f" WHERE {self._pk_column}=? AND deleted_at IS NULL",
+                (_now(), deleted_by, delete_reason, record_id),
+            )
+        return cursor.rowcount > 0
+
+    def restore(self, record_id: int) -> bool:
+        """恢复：清空软删三列。rowcount=0 表示行不存在或未删。"""
+        with self._conn:
+            cursor = self._conn.execute(
+                f'UPDATE "{self._table_name}"'
+                " SET deleted_at=NULL, deleted_by=NULL, delete_reason=NULL"
+                f" WHERE {self._pk_column}=? AND deleted_at IS NOT NULL",
+                (record_id,),
+            )
+        return cursor.rowcount > 0
+
+    def set_processed(
+        self, record_id: int, processed: int, processed_by: str
+    ) -> bool:
+        """改人工处理状态（0↔1）。遵守表上 CHECK：1=写 by/at，0=清空 by/at。"""
+        with self._conn:
+            if processed == 1:
+                cursor = self._conn.execute(
+                    f"UPDATE {self._table_name}"
+                    " SET processed=1, processed_by=?, processed_at=?"
+                    f" WHERE {self._pk_column}=?",
+                    (processed_by, _now(), record_id),
+                )
+            else:
+                cursor = self._conn.execute(
+                    f"UPDATE {self._table_name}"
+                    " SET processed=0, processed_by=NULL, processed_at=NULL"
+                    f" WHERE {self._pk_column}=?",
+                    (record_id,),
+                )
+        return cursor.rowcount > 0
+
 
 class SqliteStandardRepository(StandardRepository):
     """
     检测标准仓储实现，对应表 StandardRecord。
 
-    没有 update / delete：标准表纯追加，
-    新标准创建后自动成为当前标准，旧标准一律不动。
+    update 只做 5 个业务字段的修订，不改 created_at / created_by；
+    没有物理 delete：作废走 soft_delete（v6 软删除三列），
+    球化记录靠 standard_record_id 溯源，物理删了会变孤儿。
     """
 
     _table_name = "StandardRecord"
@@ -337,6 +411,42 @@ class SqliteStandardRepository(StandardRepository):
             standard.standard_record_id = cursor.lastrowid
         return standard
 
+    def update(
+        self,
+        standard_record_id: int,
+        standard_spheroidization_time: float,
+        standard_spheroidization_time_upper: float | None,
+        standard_spheroidization_time_lower: float | None,
+        weighing_standard: float,
+        remark: str,
+    ) -> Optional[StandardRecord]:
+        """按主键修订 5 个业务字段，created_at / created_by 不动。
+
+        已软删除的行不允许再改（WHERE 带 deleted_at IS NULL），
+        rowcount=0 表示行不存在或已删，两种都返回 None。
+        """
+        with self._conn:
+            cursor = self._conn.execute(
+                f"UPDATE {self._table_name}"
+                " SET standard_spheroidization_time=?,"
+                " standard_spheroidization_time_upper=?,"
+                " standard_spheroidization_time_lower=?,"
+                " weighing_standard=?,"
+                " remark=?"
+                f" WHERE {self._pk_column}=? AND deleted_at IS NULL",
+                (
+                    standard_spheroidization_time,
+                    standard_spheroidization_time_upper,
+                    standard_spheroidization_time_lower,
+                    weighing_standard,
+                    remark,
+                    standard_record_id,
+                ),
+            )
+        if cursor.rowcount == 0:
+            return None
+        return self.get_by_id(standard_record_id)
+
     def get_by_id(self, standard_id: int) -> Optional[StandardRecord]:
         row = self._conn.execute(
             f"SELECT * FROM {self._table_name}"
@@ -375,6 +485,42 @@ class SqliteStandardRepository(StandardRepository):
             f" ORDER BY {self._pk_column}"
         ).fetchall()
         return [self._to_entity(row) for row in rows]
+
+    def get_by_id_including_deleted(
+        self, standard_record_id: int
+    ) -> Optional[StandardRecord]:
+        """按主键取整行，含已软删除的，查不到返回 None。"""
+        row = self._conn.execute(
+            f"SELECT * FROM {self._table_name} WHERE {self._pk_column} = ?",
+            (standard_record_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return self._to_entity(row)
+
+    def soft_delete(
+        self, standard_record_id: int, deleted_by: str, delete_reason: str
+    ) -> bool:
+        """软删除：置软删三列。rowcount=0 表示行不存在或已删。"""
+        with self._conn:
+            cursor = self._conn.execute(
+                f'UPDATE "{self._table_name}"'
+                " SET deleted_at=?, deleted_by=?, delete_reason=?"
+                f" WHERE {self._pk_column}=? AND deleted_at IS NULL",
+                (_now(), deleted_by, delete_reason, standard_record_id),
+            )
+        return cursor.rowcount > 0
+
+    def restore(self, standard_record_id: int) -> bool:
+        """恢复：清空软删三列。rowcount=0 表示行不存在或未删。"""
+        with self._conn:
+            cursor = self._conn.execute(
+                f'UPDATE "{self._table_name}"'
+                " SET deleted_at=NULL, deleted_by=NULL, delete_reason=NULL"
+                f" WHERE {self._pk_column}=? AND deleted_at IS NOT NULL",
+                (standard_record_id,),
+            )
+        return cursor.rowcount > 0
 
 
 class SqliteReviewRepository(ReviewRepository):
@@ -494,6 +640,42 @@ class SqliteReviewRepository(ReviewRepository):
             int(row["spheroidization_record_id"]): int(row["review_result"])
             for row in rows
         }
+
+    def get_by_id_including_deleted(
+        self, review_record_id: int
+    ) -> Optional[ReviewRecord]:
+        """按主键取整行，含已软删除的，查不到返回 None。"""
+        row = self._conn.execute(
+            f"SELECT * FROM {self._table_name} WHERE {self._pk_column} = ?",
+            (review_record_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return self._to_entity(row)
+
+    def soft_delete(
+        self, review_record_id: int, deleted_by: str, delete_reason: str
+    ) -> bool:
+        """软删除：置软删三列。rowcount=0 表示行不存在或已删。"""
+        with self._conn:
+            cursor = self._conn.execute(
+                f'UPDATE "{self._table_name}"'
+                " SET deleted_at=?, deleted_by=?, delete_reason=?"
+                f" WHERE {self._pk_column}=? AND deleted_at IS NULL",
+                (_now(), deleted_by, delete_reason, review_record_id),
+            )
+        return cursor.rowcount > 0
+
+    def restore(self, review_record_id: int) -> bool:
+        """恢复：清空软删三列。rowcount=0 表示行不存在或未删。"""
+        with self._conn:
+            cursor = self._conn.execute(
+                f'UPDATE "{self._table_name}"'
+                " SET deleted_at=NULL, deleted_by=NULL, delete_reason=NULL"
+                f" WHERE {self._pk_column}=? AND deleted_at IS NOT NULL",
+                (review_record_id,),
+            )
+        return cursor.rowcount > 0
 
 
 class SqliteTemperatureRepository(TemperatureRepository):
@@ -663,6 +845,42 @@ class SqliteStandardSwitchLogRepository(StandardSwitchLogRepository):
             f"SELECT COUNT(*) FROM {self._table_name}{where}"
         ).fetchone()
         return int(row[0])
+
+    def get_by_id_including_deleted(
+        self, switch_log_id: int
+    ) -> Optional[StandardSwitchLog]:
+        """按主键取整行，含已软删除的，查不到返回 None。"""
+        row = self._conn.execute(
+            f"SELECT * FROM {self._table_name} WHERE {self._pk_column} = ?",
+            (switch_log_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return self._to_entity(row)
+
+    def soft_delete(
+        self, switch_log_id: int, deleted_by: str, delete_reason: str
+    ) -> bool:
+        """软删除：置软删三列。rowcount=0 表示行不存在或已删。"""
+        with self._conn:
+            cursor = self._conn.execute(
+                f'UPDATE "{self._table_name}"'
+                " SET deleted_at=?, deleted_by=?, delete_reason=?"
+                f" WHERE {self._pk_column}=? AND deleted_at IS NULL",
+                (_now(), deleted_by, delete_reason, switch_log_id),
+            )
+        return cursor.rowcount > 0
+
+    def restore(self, switch_log_id: int) -> bool:
+        """恢复：清空软删三列。rowcount=0 表示行不存在或未删。"""
+        with self._conn:
+            cursor = self._conn.execute(
+                f'UPDATE "{self._table_name}"'
+                " SET deleted_at=NULL, deleted_by=NULL, delete_reason=NULL"
+                f" WHERE {self._pk_column}=? AND deleted_at IS NOT NULL",
+                (switch_log_id,),
+            )
+        return cursor.rowcount > 0
 
 
 class SqliteUserRepository(UserAccountRepository):

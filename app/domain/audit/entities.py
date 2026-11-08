@@ -11,6 +11,7 @@ class AuditAction:
     """写操作的动作码，对应 AuditLog.action。"""
 
     CREATE_STANDARD = "create_standard"  # 新建检测标准
+    UPDATE_STANDARD = "update_standard"  # 修改检测标准
     SWITCH_STANDARD = "switch_standard"  # 切换当前标准
     PROCESS_RECORD = "process_record"  # 人工处置球化记录
     REVIEW_RECORD = "review_record"  # 人工复核

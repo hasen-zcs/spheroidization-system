@@ -46,6 +46,7 @@ from functools import lru_cache
 
 from fastapi import Depends, Request
 
+from app.application.admin.manage import ManageDataUseCase
 from app.application.review.create import CreateReviewUseCase
 from app.application.review.query import QueryReviewUseCase
 from app.application.spheroidization.create import CreateSpheroidizationUseCase
@@ -55,6 +56,7 @@ from app.application.standard.apply import ApplyStandardUseCase
 from app.application.standard.create import CreateStandardUseCase
 from app.application.standard.query import QueryStandardUseCase
 from app.application.standard.switch import SwitchStandardUseCase
+from app.application.standard.update import UpdateStandardUseCase
 from app.application.temperature.create import CreateTemperatureUseCase
 from app.application.user.auth import LoginUseCase
 from app.application.user.create import CreateUserUseCase
@@ -168,6 +170,9 @@ class Container:
             self.standard_application_state,
         )
 
+    def update_standard(self) -> UpdateStandardUseCase:
+        return UpdateStandardUseCase(self.standard_repo)
+
     def create_temperature(self) -> CreateTemperatureUseCase:
         return CreateTemperatureUseCase(self.temperature_repo, self.spheroid_repo)
 
@@ -196,6 +201,16 @@ class Container:
     def audit_logger(self) -> AuditLogger:
         # 审计写入失败只记日志不回滚业务，策略在 AuditLogger 里
         return AuditLogger(self.audit_repo)
+
+    def manage_data(self) -> ManageDataUseCase:
+        # 管理员数据管理：四个仓储 + 判断当前生效标准的查询用例
+        return ManageDataUseCase(
+            self.spheroid_repo,
+            self.standard_repo,
+            self.switchlog_repo,
+            self.review_repo,
+            self.query_standard(),
+        )
 
 
 @lru_cache(maxsize=1)
@@ -269,6 +284,12 @@ def get_query_standard_uc(
     return container.query_standard()
 
 
+def get_update_standard_uc(
+    container: Container = Depends(get_container),
+) -> UpdateStandardUseCase:
+    return container.update_standard()
+
+
 def get_apply_standard_uc(
     container: Container = Depends(get_container),
 ) -> ApplyStandardUseCase:
@@ -327,6 +348,12 @@ def get_audit_logger(
     container: Container = Depends(get_container),
 ) -> AuditLogger:
     return container.audit_logger()
+
+
+def get_manage_data_uc(
+    container: Container = Depends(get_container),
+) -> ManageDataUseCase:
+    return container.manage_data()
 
 
 # ==========================================================

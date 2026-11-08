@@ -13,19 +13,17 @@
 - 目标在主键上查不到（行根本不存在）→ 404。
 """
 
-from datetime import datetime
-
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.application.admin.manage import ManageDataUseCase
 from app.application.review.query import QueryReviewUseCase
 from app.application.standard.switch import SwitchStandardUseCase
 from app.core import permissions as P
 from app.core.security import Session
 from app.dependencies import (
-    Container,
     get_audit_logger,
-    get_container,
+    get_manage_data_uc,
     get_query_review_uc,
     get_switch_standard_uc,
     require_permission,
@@ -40,37 +38,6 @@ router = APIRouter(
     prefix="/api/admin",
     tags=["管理员数据管理"],
 )
-
-
-def _now() -> str:
-    """当前时间，格式和其它表一致："YYYY-MM-DD HH:MM:SS"。"""
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-
-# 四类可软删数据的表配置：key -> (表名, 主键列, 审计要留痕的关键字段)。
-# 关键字段刻意不含 spheroidization_image（BLOB，几十 KB，绝不能进审计 detail）。
-_TABLES = {
-    "record": (
-        "SpheroidizationRecord",
-        "spheroidization_record_id",
-        ("detection_time", "processed", "processed_by", "processed_at"),
-    ),
-    "standard": (
-        "StandardRecord",
-        "standard_record_id",
-        ("standard_spheroidization_time", "weighing_standard", "created_by"),
-    ),
-    "switch_log": (
-        "StandardSwitchLogs",
-        "switch_log_id",
-        ("switched_at", "from_standard_record_id", "to_standard_record_id", "operated_by", "reason"),
-    ),
-    "review": (
-        "ReviewRecord",
-        "review_record_id",
-        ("spheroidization_record_id", "review_result", "reviewer"),
-    ),
-}
 
 
 class ReasonRequest(BaseModel):
@@ -93,93 +60,6 @@ def _require_reason(reason: str):
     if reason is None or not reason.strip():
         return fail("请填写原因", 400)
     return None
-
-
-def _fetch_row(conn, table: str, pk: str, record_id: int):
-    """按主键取整行（含已删除的），查不到返回 None。"""
-    return conn.execute(
-        f'SELECT * FROM "{table}" WHERE {pk} = ?', (record_id,)
-    ).fetchone()
-
-
-def _snapshot(row, key_fields) -> dict:
-    """审计留痕的关键字段快照：业务关键字段 + 软删除三列。不含图片 BLOB。"""
-    data = {k: row[k] for k in key_fields}
-    data["deleted_at"] = row["deleted_at"]
-    data["deleted_by"] = row["deleted_by"]
-    data["delete_reason"] = row["delete_reason"]
-    return data
-
-
-def _soft_delete(conn, key: str, record_id: int, actor: str, reason: str):
-    """软删除。返回 (状态, before, after)。
-
-    状态：not_found=行不存在 / already=已删除（幂等）/ created=本次真的删了。
-    """
-    table, pk, key_fields = _TABLES[key]
-    row = _fetch_row(conn, table, pk, record_id)
-    if row is None:
-        return "not_found", None, None
-    if row["deleted_at"] is not None:
-        return "already", None, None
-    before = _snapshot(row, key_fields)
-    now = _now()
-    with conn:
-        conn.execute(
-            f'UPDATE "{table}" SET deleted_at=?, deleted_by=?, delete_reason=?'
-            f' WHERE {pk}=? AND deleted_at IS NULL',
-            (now, actor, reason, record_id),
-        )
-    after = _snapshot(_fetch_row(conn, table, pk, record_id), key_fields)
-    return "created", before, after
-
-
-def _restore(conn, key: str, record_id: int):
-    """恢复（清空软删除三列）。返回 (状态, before, after)。"""
-    table, pk, key_fields = _TABLES[key]
-    row = _fetch_row(conn, table, pk, record_id)
-    if row is None:
-        return "not_found", None, None
-    if row["deleted_at"] is None:
-        return "already", None, None
-    before = _snapshot(row, key_fields)
-    with conn:
-        conn.execute(
-            f'UPDATE "{table}" SET deleted_at=NULL, deleted_by=NULL, delete_reason=NULL'
-            f' WHERE {pk}=? AND deleted_at IS NOT NULL',
-            (record_id,),
-        )
-    after = _snapshot(_fetch_row(conn, table, pk, record_id), key_fields)
-    return "created", before, after
-
-
-def _set_processed(conn, record_id: int, processed: int, actor: str):
-    """改球化记录人工处理状态。返回 (状态, before, after)。"""
-    key_fields = _TABLES["record"][2]
-    table, pk = _TABLES["record"][:2]
-    row = _fetch_row(conn, table, pk, record_id)
-    if row is None:
-        return "not_found", None, None
-    before = _snapshot(row, key_fields)
-    with conn:
-        if processed == 1:
-            # 表上 CHECK：processed=1 时 by/at 必须齐
-            conn.execute(
-                "UPDATE SpheroidizationRecord"
-                " SET processed=1, processed_by=?, processed_at=?"
-                " WHERE spheroidization_record_id=?",
-                (actor, _now(), record_id),
-            )
-        else:
-            # 表上 CHECK：processed=0 时 by/at 必须全空
-            conn.execute(
-                "UPDATE SpheroidizationRecord"
-                " SET processed=0, processed_by=NULL, processed_at=NULL"
-                " WHERE spheroidization_record_id=?",
-                (record_id,),
-            )
-    after = _snapshot(_fetch_row(conn, table, pk, record_id), key_fields)
-    return "created", before, after
 
 
 # 各操作的 (动作码, 对象类型) 映射，审计留痕统一用。
@@ -222,28 +102,21 @@ def _delete_endpoint(key: str, need_reason: bool):
         data: ReasonRequest,
         request: Request,
         session: Session = Depends(require_permission(P.ACTION_MANAGE_DATA)),
-        container: Container = Depends(get_container),
+        uc: ManageDataUseCase = Depends(get_manage_data_uc),
         audit: AuditLogger = Depends(get_audit_logger),
     ):
         bad = _require_reason(data.reason) if need_reason else None
         if bad is not None:
             return bad
 
-        # 当前生效标准不许软删：删了它"当前标准"就悬空了。
-        if key == "standard":
-            current = container.query_standard().get_current()
-            if current is not None and current.standard_record_id == record_id:
-                return fail("该标准当前生效，请先切换标准后再作废", 400)
-
-        status, before, after = _soft_delete(
-            container.conn, key, record_id, session.username, data.reason
-        )
-        if status == "not_found":
+        # 当前生效标准不许软删（用例内抛 BusinessException(400)，统一信封）。
+        result = uc.soft_delete(key, record_id, session.username, data.reason)
+        if result.status == "not_found":
             return fail("目标不存在", 404)
-        if status == "already":
+        if result.status == "already":
             return ok(message="该数据已删除，无需重复操作")
         _audit(audit, request, session, key, record_id, is_delete=True,
-               before=before, after=after)
+               before=result.before, after=result.after)
         return ok(message="删除成功")
 
     return endpoint
@@ -280,16 +153,16 @@ def _restore_endpoint(key: str):
         record_id: int,
         request: Request,
         session: Session = Depends(require_permission(P.ACTION_MANAGE_DATA)),
-        container: Container = Depends(get_container),
+        uc: ManageDataUseCase = Depends(get_manage_data_uc),
         audit: AuditLogger = Depends(get_audit_logger),
     ):
-        status, before, after = _restore(container.conn, key, record_id)
-        if status == "not_found":
+        result = uc.restore(key, record_id)
+        if result.status == "not_found":
             return fail("目标不存在", 404)
-        if status == "already":
+        if result.status == "already":
             return ok(message="该数据未删除，无需恢复")
         _audit(audit, request, session, key, record_id, is_delete=False,
-               before=before, after=after)
+               before=result.before, after=result.after)
         return ok(message="恢复成功")
 
     return endpoint
@@ -327,17 +200,15 @@ def change_processed(
     data: ProcessedRequest,
     request: Request,
     session: Session = Depends(require_permission(P.ACTION_MANAGE_DATA)),
-    container: Container = Depends(get_container),
+    uc: ManageDataUseCase = Depends(get_manage_data_uc),
     audit: AuditLogger = Depends(get_audit_logger),
 ):
     bad = _require_reason(data.reason)
     if bad is not None:
         return bad
 
-    status, before, after = _set_processed(
-        container.conn, record_id, data.processed, session.username
-    )
-    if status == "not_found":
+    result = uc.set_processed(record_id, data.processed, session.username)
+    if result.status == "not_found":
         return fail("目标不存在", 404)
 
     audit.record(
@@ -345,7 +216,7 @@ def change_processed(
         action=AuditAction.CHANGE_PROCESSED,
         target_type=AuditTarget.SPHEROIDIZATION_RECORD,
         target_id=record_id,
-        detail={"before": before, "after": after, "reason": data.reason},
+        detail={"before": result.before, "after": result.after, "reason": data.reason},
         ip=client_ip(request),
     )
     return ok(message="处理状态已更新")

@@ -89,3 +89,45 @@ class SpheroidizationRepository(ABC):
         场景：异常记录页面。
         """
         ...
+
+    @abstractmethod
+    def get_by_id_including_deleted(self, record_id: int) -> Optional[SpheroidizationRecord]:
+        """
+        按主键查单条，**含已软删除的行**。
+        :param record_id: 记录主键
+        :return: 实体；行根本不存在返回 None
+        场景：管理员软删除 / 恢复前取整行做审计快照，必须能取到已删的行。
+        """
+        ...
+
+    @abstractmethod
+    def soft_delete(self, record_id: int, deleted_by: str, delete_reason: str) -> bool:
+        """
+        软删除：置 deleted_at / deleted_by / delete_reason，绝不物理 DELETE。
+        :param record_id: 记录主键
+        :param deleted_by: 删除人（登录账号）
+        :param delete_reason: 删除原因
+        :return: True=本次真删了；False=行不存在或已删除（幂等，不重复置值）
+        """
+        ...
+
+    @abstractmethod
+    def restore(self, record_id: int) -> bool:
+        """
+        恢复：清空软删除三列（deleted_at / deleted_by / delete_reason 置 NULL）。
+        :param record_id: 记录主键
+        :return: True=本次真恢复了；False=行不存在或本来未删（幂等）
+        """
+        ...
+
+    @abstractmethod
+    def set_processed(self, record_id: int, processed: int, processed_by: str) -> bool:
+        """
+        改人工处理状态（0↔1 可来回），处理人取传入账号。
+        :param record_id: 记录主键
+        :param processed: 1=已处理 / 0=未处理
+        :param processed_by: 处理人（登录账号）
+        :return: True=本次真改了；False=行不存在
+        遵守表上 CHECK：processed=1 时 by/at 必须齐，=0 时 by/at 必须全空。
+        """
+        ...

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from "vue"
+import { computed, onMounted, onUnmounted, reactive, ref } from "vue"
 
 import {
   adminGetCurrentStandardId,
@@ -129,9 +129,11 @@ function rangeText(standard: AdminStandardItem): string {
 // 加载
 // ====================
 
-async function loadTab(key: TabKey) {
+async function loadTab(key: TabKey, silent = false) {
   const state = tabs[key]
-  state.loading = true
+  if (!silent) {
+    state.loading = true
+  }
   state.error = ""
 
   try {
@@ -361,8 +363,60 @@ async function restore(tab: TabKey, id: number) {
   }
 }
 
+// 自动轮询：管理员数据页每 30 秒静默刷新当前 tab；
+// 删除/标记/恢复弹窗打开时暂停，避免把正在操作的行刷掉
+const POLL_INTERVAL_MS = 30000
+let pollTimer: number | null = null
+let visibilityHandler: (() => void) | null = null
+
+function isInteracting() {
+  return (
+    deleteTarget.value !== null ||
+    processedTarget.value !== null ||
+    deleteBusy.value ||
+    processedBusy.value ||
+    restoringId.value !== null
+  )
+}
+
+function pollRefresh() {
+  if (isInteracting()) {
+    return
+  }
+  void loadTab(activeTab.value, true)
+}
+
+function startPolling() {
+  if (pollTimer !== null) {
+    return
+  }
+  pollTimer = window.setInterval(pollRefresh, POLL_INTERVAL_MS)
+  visibilityHandler = () => {
+    if (document.visibilityState === "visible") {
+      pollRefresh()
+    }
+  }
+  document.addEventListener("visibilitychange", visibilityHandler)
+}
+
+function stopPolling() {
+  if (pollTimer !== null) {
+    window.clearInterval(pollTimer)
+    pollTimer = null
+  }
+  if (visibilityHandler) {
+    document.removeEventListener("visibilitychange", visibilityHandler)
+    visibilityHandler = null
+  }
+}
+
+onUnmounted(() => {
+  stopPolling()
+})
+
 onMounted(() => {
   void loadTab("records")
+  startPolling()
 })
 </script>
 

@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List
+from typing import List, Optional
 
 from app.domain.review.entities import ReviewRecord
 
@@ -64,5 +64,35 @@ class ReviewRepository(ABC):
         """
         统计复核记录条数，给全库分页列表的 total 用。
         :param include_deleted: 是否计入已软删除的行
+        """
+        ...
+
+    @abstractmethod
+    def get_by_id_including_deleted(self, review_record_id: int) -> Optional[ReviewRecord]:
+        """
+        按主键查单条，**含已软删除的行**。
+        :param review_record_id: 复核记录主键
+        :return: 实体；行根本不存在返回 None
+        场景：管理员软删除 / 恢复前取整行做审计快照。
+        """
+        ...
+
+    @abstractmethod
+    def soft_delete(self, review_record_id: int, deleted_by: str, delete_reason: str) -> bool:
+        """
+        软删除：置 deleted_at / deleted_by / delete_reason，绝不物理 DELETE。
+        :param review_record_id: 复核记录主键
+        :param deleted_by: 删除人（登录账号）
+        :param delete_reason: 删除原因
+        :return: True=本次真删了；False=行不存在或已删除（幂等）
+        """
+        ...
+
+    @abstractmethod
+    def restore(self, review_record_id: int) -> bool:
+        """
+        恢复：清空软删除三列。
+        :param review_record_id: 复核记录主键
+        :return: True=本次真恢复了；False=行不存在或本来未删（幂等）
         """
         ...
