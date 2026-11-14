@@ -109,6 +109,11 @@ class SwitchStandardUseCase:
         为什么在应用层拼而不是让路由自己去查：路由拿到仓储就等于绕开了
         "业务规则都在 UseCase 里"这条线，以后加个"隐藏已删除标准"之类的
         规则，就得回头挨个改路由。日志量小，逐条单查两次不碍事。
+
+        注意：这里故意用 get_by_id_including_deleted 而不是 get_by_id——
+        切换记录是历史账本，目标标准事后被软删（比如 11-09 清理测试标准）
+        不该让历史记录里的标准值消失，否则路由层拿 None 就会 500，
+        前端整张"切换记录"列表直接变空（2026-11-14 线上事故根因）。
         """
         offset = (page - 1) * page_size
         logs = self.switch_log_repo.list_all(
@@ -118,12 +123,16 @@ class SwitchStandardUseCase:
         result = []
         for log in logs:
             from_standard = (
-                self.standard_repo.get_by_id(log.from_standard_record_id)
+                self.standard_repo.get_by_id_including_deleted(
+                    log.from_standard_record_id
+                )
                 if log.from_standard_record_id is not None
                 else None
             )
             to_standard = (
-                self.standard_repo.get_by_id(log.to_standard_record_id)
+                self.standard_repo.get_by_id_including_deleted(
+                    log.to_standard_record_id
+                )
                 if log.to_standard_record_id is not None
                 else None
             )

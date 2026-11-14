@@ -204,7 +204,11 @@ def list_switch_logs(
             if from_standard is not None
             else None
         )
-        item["to_value"] = to_standard.standard_spheroidization_time
+        item["to_value"] = (
+            to_standard.standard_spheroidization_time
+            if to_standard is not None
+            else None
+        )
         items.append(item)
 
     return ok(
